@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE detection-run SYSTEM "http://kismetwireless.net/kismet-3.1.0.dtd">
+<detection-run kismet-version="2023.07.R1" start-time="Sun Sep 20 16:02:11 2026">
+  <wireless-network number="1" type="infrastructure" wep="false" cloaked="false">
+    <SSID>
+      <type>Beacon</type>
+      <max-rate>54.00</max-rate>
+      <encryption>WPA+AES-CCM</encryption>
+      <encryption>WPA+802.1X</encryption>
+      <essid cloaked="false">HQ-Secure</essid>
+    </SSID>
+    <BSSID>00:15:6D:C0:00:01</BSSID>
+    <manuf>Ubiquiti</manuf>
+    <channel>36</channel>
+    <freqmhz>5180</freqmhz>
+    <carrier>IEEE 802.11n</carrier>
+    <snr-info>
+      <last_signal_dbm>-38</last_signal_dbm>
+      <min_signal_dbm>-62</min_signal_dbm>
+      <max_signal_dbm>-32</max_signal_dbm>
+    </snr-info>
+    <gps-info>
+      <min-lat>37.77480</min-lat>
+      <min-lon>-122.41960</min-lon>
+      <max-lat>37.77510</max-lat>
+      <max-lon>-122.41910</max-lon>
+      <peak-lat>37.77495</peak-lat>
+      <peak-lon>-122.41940</peak-lon>
+      <avg-lat>37.77492</avg-lat>
+      <avg-lon>-122.41935</avg-lon>
+      <avg-alt>13.1</avg-alt>
+    </gps-info>
+    <wireless-client number="1" type="established">
+      <client-mac>A4:C3:F0:50:00:11</client-mac>
+      <client-manuf>Samsung</client-manuf>
+      <snr-info><last_signal_dbm>-44</last_signal_dbm></snr-info>
+      <gps-info>
+        <avg-lat>37.77490</avg-lat>
+        <avg-lon>-122.41930</avg-lon>
+        <avg-alt>13.0</avg-alt>
+      </gps-info>
+    </wireless-client>
+  </wireless-network>
+  <wireless-network number="2" type="infrastructure" wep="false" cloaked="false">
+    <SSID>
+      <type>Beacon</type>
+      <encryption>WPA+PSK</encryption>
+      <encryption>WPA+AES-CCM</encryption>
+      <essid cloaked="false">HQ-Guest</essid>
+    </SSID>
+    <BSSID>00:15:6D:C0:00:02</BSSID>
+    <manuf>Ubiquiti</manuf>
+    <channel>6</channel>
+    <freqmhz>2437</freqmhz>
+    <snr-info>
+      <last_signal_dbm>-51</last_signal_dbm>
+      <min_signal_dbm>-70</min_signal_dbm>
+      <max_signal_dbm>-47</max_signal_dbm>
+    </snr-info>
+    <gps-info>
+      <avg-lat>37.77488</avg-lat>
+      <avg-lon>-122.41950</avg-lon>
+      <avg-alt>12.4</avg-alt>
+    </gps-info>
+    <wireless-client number="1" type="established">
+      <client-mac>F0:18:98:50:00:22</client-mac>
+      <client-manuf>Apple</client-manuf>
+      <snr-info><last_signal_dbm>-48</last_signal_dbm></snr-info>
+    </wireless-client>
+  </wireless-network>
+  <wireless-network number="3" type="infrastructure" wep="false" cloaked="false">
+    <SSID>
+      <type>Beacon</type>
+      <encryption>WPA+PSK</encryption>
+      <essid cloaked="false">sensors</essid>
+    </SSID>
+    <BSSID>00:15:6D:C0:00:03</BSSID>
+    <manuf>Ubiquiti</manuf>
+    <channel>11</channel>
+    <freqmhz>2462</freqmhz>
+    <snr-info>
+      <last_signal_dbm>-70</last_signal_dbm>
+    </snr-info>
+    <gps-info>
+      <avg-lat>37.77502</avg-lat>
+      <avg-lon>-122.41922</avg-lon>
+    </gps-info>
+  </wireless-network>
+</detection-run>

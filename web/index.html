@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SurveyMap — network survey preview</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <div>
+          <h1>SurveyMap</h1>
+          <p class="tag">Layer 2 / Layer 3 survey → map, including ports and services</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="btn-drawio" class="btn" type="button" disabled>Export draw.io</button>
+        <button id="btn-vsdx" class="btn" type="button" disabled>Export Visio .vsdx</button>
+        <button id="btn-vdx" class="btn ghost" type="button" disabled>Export Visio XML</button>
+        <button id="btn-menu" class="btn ghost menu-toggle" type="button" aria-label="Toggle samples">Samples</button>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside id="sidebar" class="sidebar">
+        <section>
+          <h2>Load a survey</h2>
+          <p class="hint">Drop a capture, or pick a bundled campus sample. No upload required for the preview.</p>
+          <label class="drop" id="dropzone">
+            <input id="file" type="file" accept=".pcap,.pcapng,.cap,.netxml,.csv" />
+            <span>Drop .pcap / .pcapng / .netxml / .csv</span>
+          </label>
+          <ul id="sample-list" class="sample-list"></ul>
+        </section>
+        <section>
+          <h2>Show</h2>
+          <label class="check"><input type="checkbox" data-filter="l2" checked /> Wired L2</label>
+          <label class="check"><input type="checkbox" data-filter="l3" checked /> L3 / IP</label>
+          <label class="check"><input type="checkbox" data-filter="client-server" checked /> Ports &amp; services</label>
+          <label class="check"><input type="checkbox" data-filter="wireless" checked /> Wireless</label>
+          <label class="check"><input type="checkbox" data-filter="vlan" checked /> VLANs</label>
+          <label class="check"><input type="checkbox" data-filter="subnet" checked /> Subnets</label>
+        </section>
+        <section class="legend">
+          <h2>Legend</h2>
+          <ul>
+            <li><i class="swatch ap"></i> Access point</li>
+            <li><i class="swatch host"></i> Host / station</li>
+            <li><i class="swatch server"></i> Server</li>
+            <li><i class="swatch gateway"></i> Gateway</li>
+            <li><i class="swatch service"></i> Service / port edge</li>
+          </ul>
+        </section>
+      </aside>
+
+      <main class="stage">
+        <div id="map" class="map" role="application" aria-label="Network map"></div>
+        <div id="empty" class="overlay">
+          <h2>No survey loaded</h2>
+          <p>Choose a sample on the left or drop a Wireshark, tcpdump, Kismet, or airodump-ng export.</p>
+        </div>
+        <div id="loading" class="overlay hidden">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Parsing frames…</p>
+        </div>
+        <div id="error" class="overlay hidden">
+          <h2>Could not parse this file</h2>
+          <p id="error-msg"></p>
+          <button id="btn-dismiss" class="btn" type="button">Dismiss</button>
+        </div>
+        <div class="status" id="status">Ready</div>
+      </main>
+
+      <aside class="inspector" id="inspector">
+        <h2>Details</h2>
+        <p id="inspector-empty" class="hint">Select a node or link to inspect MACs, IPs, RF, GPS, ports, and services.</p>
+        <div id="inspector-body" class="hidden"></div>
+      </aside>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+BSSID, First time seen, Last time seen, channel, Speed, Privacy, Cipher, Authentication, Power, # beacons, # IV, LAN IP, ID-length, ESSID, Key
+00:15:6D:C0:00:01, 2026-09-20 16:02:11, 2026-09-20 16:18:02, 36, 54, WPA2, CCMP, MGT, -38, 412, 18, 0.0.0.0, 9, HQ-Secure,
+00:15:6D:C0:00:02, 2026-09-20 16:02:14, 2026-09-20 16:18:02, 6, 54, WPA2, CCMP, PSK, -51, 288, 4, 10.30.0.1, 8, HQ-Guest,
+00:15:6D:C0:00:03, 2026-09-20 16:05:01, 2026-09-20 16:17:40, 11, 54, WPA2, CCMP, PSK, -70, 90, 0, 0.0.0.0, 7, sensors,
+
+Station MAC, First time seen, Last time seen, Power, # packets, BSSID, Probed ESSIDs
+A4:C3:F0:50:00:11, 2026-09-20 16:03:01, 2026-09-20 16:17:55, -44, 120, 00:15:6D:C0:00:01, HQ-Secure
+F0:18:98:50:00:22, 2026-09-20 16:04:12, 2026-09-20 16:17:40, -48, 86, 00:15:6D:C0:00:02, HQ-Guest,HQ-Secure
+8C:85:90:50:00:33, 2026-09-20 16:08:00, 2026-09-20 16:08:40, -81, 6, (not associated), HQ-Guest

@@ -1,0 +1,418 @@
+from __future__ import annotations
+
+import io
+from typing import Any
+
+from scapy.all import (  # type: ignore[import-untyped]
+    ARP,
+    BOOTP,
+    DHCP,
+    DNS,
+    IP,
+    TCP,
+    UDP,
+    Dot1Q,
+    Ether,
+    IPv6,
+    RadioTap,
+    Raw,
+    conf,
+)
+from scapy.utils import PcapReader  # type: ignore[import-untyped]
+
+from surveymap.graph import GraphBuilder
+from surveymap.services import infer_service_from_payload, service_for_port
+from scapy.layers.dot11 import (  # type: ignore[import-untyped]
+    Dot11,
+    Dot11AssoReq,
+    Dot11AssoResp,
+    Dot11Beacon,
+    Dot11Elt,
+    Dot11ProbeReq,
+    Dot11ProbeResp,
+)
+
+conf.verb = 0
+
+MAX_PACKETS = 80_000
+
+
+def _elt_info(elt: Any) -> bytes:
+    info = getattr(elt, "info", b"")
+    if isinstance(info, bytes):
+        return info
+    if isinstance(info, str):
+        return info.encode("utf-8", errors="replace")
+    return b""
+
+
+def _walk_elements(pkt: Any) -> dict[int, list[bytes]]:
+    found: dict[int, list[bytes]] = {}
+    elt = pkt.getlayer(Dot11Elt)
+    while elt is not None:
+        ident = int(getattr(elt, "ID", -1))
+        found.setdefault(ident, []).append(_elt_info(elt))
+        nxt = elt.payload if hasattr(elt, "payload") else None
+        elt = nxt if isinstance(nxt, Dot11Elt) else nxt.getlayer(Dot11Elt) if nxt is not None else None
+    return found
+
+
+def _decode_ssid(elements: dict[int, list[bytes]]) -> str | None:
+    blobs = elements.get(0) or []
+    if not blobs:
+        return None
+    raw_ssid = blobs[0]
+    if not raw_ssid:
+        return None
+    text = raw_ssid.decode("utf-8", errors="replace").strip("\x00").strip()
+    return text or None
+
+
+def _channel_from_elements(elements: dict[int, list[bytes]], freq: float | None) -> int | None:
+    ds = elements.get(3)
+    if ds and ds[0]:
+        return ds[0][0]
+    if freq:
+        f = int(freq)
+        if 2412 <= f <= 2484:
+            return (f - 2407) // 5
+        if 5000 <= f <= 5900:
+            return (f - 5000) // 5
+        if 5955 <= f <= 7115:
+            return (f - 5955) // 5 + 1
+    return None
+
+
+def _encryption_from_elements(elements: dict[int, list[bytes]], cap) -> str | None:
+    privacy = False
+    try:
+        privacy = bool(cap and (int(cap) & 0x10))
+    except (TypeError, ValueError):
+        privacy = "privacy" in str(cap).lower()
+    rsn = elements.get(48)
+    vendors = elements.get(221) or []
+    wpa = any(v.startswith(b"\x00\x50\xf2\x01") for v in vendors)
+    if rsn:
+        blob = rsn[0]
+        # AKM suite selector is typically after pairwise; SAE = 00-0f-ac:08
+        if b"\x00\x0f\xac\x08" in blob:
+            return "WPA3-SAE"
+        if b"\x00\x0f\xac\x01" in blob:
+            return "WPA2-802.1X"
+        if wpa:
+            return "WPA/WPA2-PSK"
+        return "WPA2-PSK"
+    if wpa:
+        return "WPA-PSK"
+    if privacy:
+        return "WEP"
+    return "Open"
+
+
+def _radiotap_rf(pkt: Any) -> tuple[float | None, float | None]:
+    signal = None
+    freq = None
+    if pkt.haslayer(RadioTap):
+        rt = pkt[RadioTap]
+        signal = getattr(rt, "dBm_AntSignal", None)
+        freq = getattr(rt, "ChannelFrequency", None)
+        if freq is None:
+            freq = getattr(rt, "ChannelFreq", None)
+    try:
+        signal = float(signal) if signal is not None else None
+    except (TypeError, ValueError):
+        signal = None
+    try:
+        freq = float(freq) if freq is not None else None
+    except (TypeError, ValueError):
+        freq = None
+    return signal, freq
+
+
+def _dot11_addrs(dot11: Any) -> tuple[str | None, str | None, str | None]:
+    to_ds = bool(int(getattr(dot11, "FCfield", 0)) & 0x1)
+    from_ds = bool(int(getattr(dot11, "FCfield", 0)) & 0x2)
+    addr1 = getattr(dot11, "addr1", None)
+    addr2 = getattr(dot11, "addr2", None)
+    addr3 = getattr(dot11, "addr3", None)
+    if to_ds and not from_ds:
+        bssid, sta = addr1, addr2
+    elif from_ds and not to_ds:
+        bssid, sta = addr2, addr1
+    else:
+        bssid, sta = addr3, addr2
+    return bssid, sta, addr1
+
+
+def _iter_vlans(pkt: Any) -> list[int]:
+    vlans: list[int] = []
+    layer = pkt
+    while layer is not None:
+        if isinstance(layer, Dot1Q):
+            vlans.append(int(layer.vlan))
+        layer = layer.payload if hasattr(layer, "payload") else None
+        if layer is None or layer is layer.payload:
+            break
+    return vlans
+
+
+def _dhcp_options(pkt: Any) -> dict[str, Any]:
+    if not pkt.haslayer(DHCP):
+        return {}
+    out: dict[str, Any] = {}
+    for item in pkt[DHCP].options:
+        if not isinstance(item, tuple) or len(item) < 2:
+            continue
+        key, value = item[0], item[1]
+        if key == "subnet_mask":
+            out["subnet_mask"] = str(value)
+        elif key == "router":
+            out["default_gateway"] = str(value) if not isinstance(value, list) else [str(v) for v in value]
+        elif key == "name_server":
+            out["dns_servers"] = str(value) if not isinstance(value, list) else [str(v) for v in value]
+        elif key == "server_id":
+            out["dhcp_server"] = str(value)
+        elif key == "domain":
+            out["dns_domain"] = str(value)
+    return out
+
+
+def _prefix_from_mask(mask: str | None) -> int | None:
+    if not mask:
+        return None
+    try:
+        return ip_network_prefix(mask)
+    except Exception:
+        return None
+
+
+def ip_network_prefix(mask: str) -> int:
+    parts = [int(p) for p in mask.split(".")]
+    bits = "".join(f"{p:08b}" for p in parts)
+    return bits.count("1")
+
+
+def _try_ospf(builder: GraphBuilder, pkt: Any, src_id: str | None) -> None:
+    if not src_id:
+        return
+    raw_bytes = bytes(pkt) if hasattr(pkt, "__bytes__") else b""
+    # OSPF is IP proto 89; hello type 1 starts after IP header
+    if pkt.haslayer(IP) and pkt[IP].proto == 89:
+        builder.add_role(src_id, "gateway")
+        payload = bytes(pkt[IP].payload)
+        router_id = None
+        area = None
+        if len(payload) >= 16:
+            router_id = ".".join(str(b) for b in payload[4:8])
+            area = ".".join(str(b) for b in payload[8:12])
+        builder.observe_routing(
+            src_id,
+            routing_protocol="OSPF",
+            ospf_router_id=router_id,
+            ospf_area=area,
+        )
+        builder.observe_service(src_id, "ospf")
+
+
+def _infer_packet_service(pkt: Any, sport: int | None, dport: int | None) -> tuple[str | None, dict[str, Any]]:
+    meta: dict[str, Any] = {}
+    if pkt.haslayer(DHCP):
+        return "dhcp", meta
+    if pkt.haslayer(DNS):
+        try:
+            dns = pkt[DNS]
+            if getattr(dns, "qd", None):
+                qd = dns.qd[0] if isinstance(dns.qd, list) else dns.qd
+                qname = getattr(qd, "qname", None)
+                if qname:
+                    if isinstance(qname, bytes):
+                        qname = qname.decode("utf-8", errors="replace")
+                    meta["dns_query"] = str(qname).rstrip(".")
+        except Exception:
+            pass
+        if dport == 5353 or sport == 5353:
+            return "mdns", meta
+        return "dns", meta
+    payload = b""
+    if pkt.haslayer(Raw):
+        payload = bytes(pkt[Raw].load)
+    named, extra = infer_service_from_payload(payload, sport, dport)
+    meta.update(extra)
+    if named:
+        return named, meta
+    if pkt.haslayer(IP) and pkt[IP].proto == 89:
+        return "ospf", meta
+    return service_for_port(dport) or service_for_port(sport), meta
+
+
+def parse_pcap(builder: GraphBuilder, data: bytes, filename: str) -> None:
+    stream = io.BytesIO(data)
+    try:
+        reader = PcapReader(stream)
+    except Exception as exc:
+        raise ValueError(f"Could not open capture {filename}: {exc}") from exc
+    try:
+        for pkt in reader:
+            builder.packet_count += 1
+            if builder.packet_count > MAX_PACKETS:
+                builder.warnings.append(f"Stopped after {MAX_PACKETS} packets.")
+                break
+            try:
+                _handle_packet(builder, pkt)
+            except Exception:
+                continue
+    finally:
+        try:
+            reader.close()
+        except Exception:
+            pass
+
+
+def _handle_packet(builder: GraphBuilder, pkt: Any) -> None:
+    vlans = _iter_vlans(pkt)
+    vlan = vlans[0] if vlans else None
+    src_mac = dst_mac = None
+    if pkt.haslayer(Ether):
+        src_mac = pkt[Ether].src
+        dst_mac = pkt[Ether].dst
+        builder.add_l2(src_mac, dst_mac, vlan)
+
+    if pkt.haslayer(Dot11):
+        _handle_dot11(builder, pkt)
+
+    if pkt.haslayer(ARP):
+        arp = pkt[ARP]
+        builder.bind_ip_mac(arp.psrc, arp.hwsrc)
+        if arp.op == 2:
+            builder.bind_ip_mac(arp.pdst, arp.hwdst)
+        builder.add_l3(arp.psrc, arp.pdst, proto="arp", vlan=vlan)
+
+    src_ip = dst_ip = None
+    proto = None
+    sport = dport = None
+    if pkt.haslayer(IP):
+        src_ip, dst_ip = pkt[IP].src, pkt[IP].dst
+        proto = {6: "tcp", 17: "udp", 1: "icmp", 89: "ospf"}.get(int(pkt[IP].proto), f"ip-{pkt[IP].proto}")
+    elif pkt.haslayer(IPv6):
+        src_ip, dst_ip = pkt[IPv6].src, pkt[IPv6].dst
+        proto = "ipv6"
+
+    if pkt.haslayer(TCP):
+        sport, dport = int(pkt[TCP].sport), int(pkt[TCP].dport)
+        proto = "tcp"
+    elif pkt.haslayer(UDP):
+        sport, dport = int(pkt[UDP].sport), int(pkt[UDP].dport)
+        proto = "udp"
+
+    service, metadata = _infer_packet_service(pkt, sport, dport)
+
+    if pkt.haslayer(Dot11) and src_ip:
+        _, sta, _ = _dot11_addrs(pkt[Dot11])
+        if sta:
+            builder.bind_ip_mac(src_ip, sta)
+
+    if src_ip or dst_ip:
+        builder.add_l3(
+            src_ip,
+            dst_ip,
+            proto=proto,
+            sport=sport,
+            dport=dport,
+            src_mac=src_mac,
+            dst_mac=dst_mac,
+            vlan=vlan,
+            service=service,
+            metadata=metadata,
+        )
+
+    src_id = builder.ip_to_device.get(src_ip or "")
+    dst_id = builder.ip_to_device.get(dst_ip or "")
+
+    if pkt.haslayer(DHCP) and pkt.haslayer(BOOTP):
+        bootp = pkt[BOOTP]
+        chaddr = None
+        try:
+            chaddr = ":".join(f"{b:02x}" for b in bytes(bootp.chaddr)[:6])
+        except Exception:
+            pass
+        yiaddr = getattr(bootp, "yiaddr", None)
+        if yiaddr and str(yiaddr) not in {"0.0.0.0", "255.255.255.255"}:
+            node = builder.bind_ip_mac(str(yiaddr), chaddr)
+            opts = _dhcp_options(pkt)
+            if node:
+                builder.observe_routing(node, **opts)
+                mask = opts.get("subnet_mask")
+                prefix = _prefix_from_mask(mask if isinstance(mask, str) else None)
+                if prefix and yiaddr:
+                    builder.netmasks[str(yiaddr)] = prefix
+            gw = opts.get("default_gateway")
+            gw_ip = gw[0] if isinstance(gw, list) and gw else gw if isinstance(gw, str) else None
+            if gw_ip:
+                gw_id = builder.observe_ip(gw_ip)
+                if gw_id:
+                    builder.add_role(gw_id, "gateway")
+                    builder.observe_routing(gw_id, role="default-gateway")
+            dhcp_srv = opts.get("dhcp_server")
+            if dhcp_srv:
+                srv_id = builder.observe_ip(str(dhcp_srv))
+                if srv_id:
+                    builder.add_role(srv_id, "server")
+                    builder.observe_routing(srv_id, services=["dhcp"])
+
+    if pkt.haslayer(DNS):
+        dns_id = src_id if sport == 53 else dst_id if dport == 53 else None
+        if dns_id:
+            builder.add_role(dns_id, "server")
+            builder.observe_service(dns_id, "mdns" if dport == 5353 or sport == 5353 else "dns")
+            builder.observe_routing(dns_id, services=["dns"])
+
+    _try_ospf(builder, pkt, src_id)
+
+
+def _handle_dot11(builder: GraphBuilder, pkt: Any) -> None:
+    dot11 = pkt[Dot11]
+    bssid, sta, _ = _dot11_addrs(dot11)
+    signal, freq = _radiotap_rf(pkt)
+    elements = _walk_elements(pkt)
+    ssid = _decode_ssid(elements)
+    channel = _channel_from_elements(elements, freq)
+    cap = None
+    if pkt.haslayer(Dot11Beacon):
+        cap = pkt[Dot11Beacon].cap
+    elif pkt.haslayer(Dot11ProbeResp):
+        cap = pkt[Dot11ProbeResp].cap
+    enc = None
+    if pkt.haslayer(Dot11Beacon) or pkt.haslayer(Dot11ProbeResp):
+        enc = _encryption_from_elements(elements, cap)
+        builder.add_ap(
+            bssid,
+            ssid=ssid,
+            channel=channel,
+            frequency_mhz=freq,
+            encryption=enc,
+            signal_dbm=signal,
+        )
+        if sta and sta != bssid:
+            builder.add_wireless_link(sta, bssid, ssid=ssid, associated=False)
+    elif pkt.haslayer(Dot11ProbeReq):
+        sta_id = builder.observe_mac(sta or getattr(dot11, "addr2", None), wireless=True)
+        if sta_id:
+            builder.add_role(sta_id, "station")
+            builder.observe_rf(sta_id, ssid=ssid, channel=channel, frequency_mhz=freq)
+            builder.observe_signal(sta_id, signal)
+    elif pkt.haslayer(Dot11AssoReq) or pkt.haslayer(Dot11AssoResp):
+        builder.add_wireless_link(sta, bssid, ssid=ssid, associated=True)
+        if bssid:
+            ap_id = builder.observe_mac(bssid, wireless=True)
+            if ap_id:
+                builder.observe_signal(ap_id, signal)
+                builder.observe_rf(ap_id, ssid=ssid, channel=channel, frequency_mhz=freq)
+    else:
+        # Data / other management
+        if bssid:
+            builder.add_ap(bssid, ssid=ssid, channel=channel, frequency_mhz=freq, signal_dbm=signal)
+        if sta and bssid and sta != bssid:
+            builder.add_wireless_link(sta, bssid, ssid=ssid, associated=True)
+            sta_id = builder.observe_mac(sta, wireless=True)
+            if sta_id:
+                builder.observe_signal(sta_id, signal)
