@@ -1,3 +1,6 @@
-"""SurveyMap — network survey files to visual maps."""
+"""NetSeer — turn traffic into terrain."""
+
+from surveymap.brand import PRODUCT_NAME
 
 __version__ = "0.1.0"
+__all__ = ["PRODUCT_NAME"]

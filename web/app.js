@@ -1,7 +1,7 @@
-/* SurveyMap preview — cytoscape map, samples, upload, export. */
+/* NetSeer preview — cytoscape map, samples, upload, export. */
 const state = {
   graph: null,
-  title: "Survey map",
+  title: "NetSeer map",
   cy: null,
   filters: {
     l2: true,
@@ -252,7 +252,7 @@ async function parseResponse(res) {
 
 function applyGraph(graph, title) {
   state.graph = graph;
-  state.title = title || "Survey map";
+  state.title = title || "NetSeer map";
   const n = graph.nodes?.length || 0;
   const e = graph.links?.length || 0;
   const services = new Set();
@@ -462,10 +462,10 @@ async function init() {
       if (state.graph) renderMap();
     });
   });
-  el("btn-drawio").addEventListener("click", () => exportKind("drawio", "survey-map.drawio"));
-  el("btn-vsdx").addEventListener("click", () => exportKind("vsdx", "survey-map.vsdx"));
-  el("btn-vdx").addEventListener("click", () => exportKind("vdx", "survey-map.vdx"));
-  el("btn-report").addEventListener("click", () => exportKind("report.pdf", "survey-map-report.pdf"));
+  el("btn-drawio").addEventListener("click", () => exportKind("drawio", "netseer-map.drawio"));
+  el("btn-vsdx").addEventListener("click", () => exportKind("vsdx", "netseer-map.vsdx"));
+  el("btn-vdx").addEventListener("click", () => exportKind("vdx", "netseer-map.vdx"));
+  el("btn-report").addEventListener("click", () => exportKind("report.pdf", "netseer-map-report.pdf"));
   el("btn-dismiss").addEventListener("click", () => show("error", false));
   el("btn-menu").addEventListener("click", () => el("sidebar").classList.toggle("open"));
   el("device-close").addEventListener("click", closeDeviceDialog);

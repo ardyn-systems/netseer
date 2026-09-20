@@ -29,10 +29,14 @@ button, input { font: inherit; }
   background: #0e1626;
 }
 .brand { display: flex; gap: 0.75rem; align-items: center; }
-.mark {
-  width: 2rem; height: 2rem; border-radius: 0.6rem;
-  background: conic-gradient(from 140deg, var(--wired), var(--wireless), var(--service), var(--wired));
+.logo {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.55rem;
+  background: #071018;
   box-shadow: var(--shadow);
+  object-fit: cover;
+  flex-shrink: 0;
 }
 h1 { font-size: 1.1rem; margin: 0; }
 .tag { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.8rem; }

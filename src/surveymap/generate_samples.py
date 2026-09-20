@@ -28,6 +28,8 @@ from scapy.layers.dot11 import (  # type: ignore[import-untyped]
 )
 from scapy.utils import PcapNgWriter, mac2str  # type: ignore[import-untyped]
 
+from surveymap.brand import USER_AGENT
+
 DATA = Path(__file__).resolve().parent / "data"
 
 GW = "00:1a:2f:aa:00:01"
@@ -47,7 +49,7 @@ RSN_8021X = bytes.fromhex("0100000fac040100000fac040100000fac010000")
 
 
 def _http_get(host: str, path: str = "/") -> bytes:
-    return f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: SurveyMap/0.1\r\n\r\n".encode()
+    return f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: {USER_AGENT}\r\n\r\n".encode()
 
 
 def _tls_client_hello() -> bytes:

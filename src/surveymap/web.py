@@ -6,6 +6,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from surveymap.brand import DEFAULT_MAP_TITLE, MOTTO, PRODUCT_NAME
 from surveymap.detect import EmptySurveyError, UnsupportedSurveyError
 from surveymap.exporters import (
     device_csv,
@@ -25,7 +26,7 @@ from surveymap.serialize import graph_from_dict
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
-app = FastAPI(title="SurveyMap", version="0.1.0")
+app = FastAPI(title=PRODUCT_NAME, version="0.1.0", description=MOTTO)
 
 
 def _http_error(exc: Exception, status: int = 400) -> HTTPException:
@@ -34,7 +35,7 @@ def _http_error(exc: Exception, status: int = 400) -> HTTPException:
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True, "name": "SurveyMap"}
+    return {"ok": True, "name": PRODUCT_NAME, "motto": MOTTO}
 
 
 @app.get("/api/samples")
@@ -72,7 +73,7 @@ async def parse_upload(file: UploadFile = File(...)):
 def _graph_from_body(body: dict):
     if "nodes" not in body:
         raise HTTPException(status_code=400, detail="Export body must include a graph with nodes and links.")
-    return graph_from_dict(body), body.get("title") or "Survey map"
+    return graph_from_dict(body), body.get("title") or DEFAULT_MAP_TITLE
 
 
 @app.post("/api/export/drawio")
@@ -82,7 +83,7 @@ def export_drawio_api(body: dict):
     return Response(
         content=xml,
         media_type="application/xml",
-        headers={"Content-Disposition": 'attachment; filename="survey-map.drawio"'},
+        headers={"Content-Disposition": 'attachment; filename="netseer-map.drawio"'},
     )
 
 
@@ -93,7 +94,7 @@ def export_vdx_api(body: dict):
     return Response(
         content=xml,
         media_type="application/xml",
-        headers={"Content-Disposition": 'attachment; filename="survey-map.vdx"'},
+        headers={"Content-Disposition": 'attachment; filename="netseer-map.vdx"'},
     )
 
 
@@ -104,7 +105,7 @@ def export_vsdx_api(body: dict):
     return Response(
         content=blob,
         media_type="application/vnd.visio",
-        headers={"Content-Disposition": 'attachment; filename="survey-map.vsdx"'},
+        headers={"Content-Disposition": 'attachment; filename="netseer-map.vsdx"'},
     )
 
 
@@ -177,6 +178,14 @@ def index():
     if not index_path.exists():
         return JSONResponse({"error": "Web UI missing"}, status_code=500)
     return FileResponse(index_path)
+
+
+@app.get("/favicon.ico")
+def favicon():
+    path = WEB_DIR / "favicon.ico"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Favicon missing")
+    return FileResponse(path, media_type="image/x-icon")
 
 
 if WEB_DIR.exists():

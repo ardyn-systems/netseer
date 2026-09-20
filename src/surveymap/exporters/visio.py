@@ -36,7 +36,7 @@ def _link_caption(link) -> str:
     return link.label or link.kind
 
 
-def export_vdx(graph: SurveyGraph, title: str = "Survey map") -> str:
+def export_vdx(graph: SurveyGraph, title: str = "NetSeer map") -> str:
     """Visio 2003 XML (.vdx), openable in Visio and many converters."""
     positions = layout_positions(graph)
     shapes: list[str] = []
@@ -120,10 +120,10 @@ def export_vdx(graph: SurveyGraph, title: str = "Survey map") -> str:
 <VisioDocument xmlns="urn:schemas-microsoft-com:office:visio" xmlns:v="urn:schemas-microsoft-com:vml">
   <DocumentProperties>
     <Title>{escape(title)}</Title>
-    <Creator>SurveyMap</Creator>
+    <Creator>NetSeer</Creator>
   </DocumentProperties>
   <Pages>
-    <Page ID="0" Name="Survey">
+    <Page ID="0" Name="NetSeer">
       <PageSheet>
         <PageProps>
           <PageWidth Unit="IN">16.667</PageWidth>
@@ -142,7 +142,7 @@ def export_vdx(graph: SurveyGraph, title: str = "Survey map") -> str:
 '''
 
 
-def export_vsdx(graph: SurveyGraph, title: str = "Survey map") -> bytes:
+def export_vsdx(graph: SurveyGraph, title: str = "NetSeer map") -> bytes:
     """Office Open XML Visio drawing (.vsdx)."""
     positions = layout_positions(graph)
     shapes_xml: list[str] = []
@@ -278,12 +278,12 @@ def export_vsdx(graph: SurveyGraph, title: str = "Survey map") -> bytes:
     core = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <dc:title>{escape(title)}</dc:title>
-  <dc:creator>SurveyMap</dc:creator>
+  <dc:creator>NetSeer</dc:creator>
 </cp:coreProperties>
 '''
     app = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">
-  <Application>SurveyMap</Application>
+  <Application>NetSeer</Application>
 </Properties>
 '''
     buf = BytesIO()

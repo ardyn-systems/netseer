@@ -21,6 +21,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from surveymap.brand import DEFAULT_REPORT_TITLE, MOTTO, PRODUCT_NAME, pdf_logo_path
 from surveymap.models import Link, Node, SurveyGraph
 
 FIELD_ORDER = [
@@ -135,7 +136,7 @@ def device_properties(graph: SurveyGraph, node: Node) -> list[dict[str, str]]:
 
 
 def device_plain_text(graph: SurveyGraph, node: Node) -> str:
-    lines = [f"SurveyMap device: {node.label}", ""]
+    lines = [f"{PRODUCT_NAME} device: {node.label}", ""]
     for row in device_properties(graph, node):
         value = row["value"] or "—"
         lines.append(f"{row['name']}: {value}")
@@ -232,40 +233,74 @@ def _property_table(rows: list[dict[str, str]], styles: dict) -> Table:
     return table
 
 
+def _draw_chrome(canvas, _doc) -> None:
+    canvas.saveState()
+    page_w, page_h = letter
+    logo = pdf_logo_path()
+    top = page_h - 0.42 * inch
+    text_x = 0.55 * inch
+    if logo is not None:
+        canvas.drawImage(
+            str(logo),
+            0.55 * inch,
+            top - 0.14 * inch,
+            width=0.42 * inch,
+            height=0.42 * inch,
+            mask="auto",
+            preserveAspectRatio=True,
+        )
+        text_x = 1.1 * inch
+    canvas.setFillColor(colors.HexColor("#0b1220"))
+    canvas.setFont("Helvetica-Bold", 11)
+    canvas.drawString(text_x, top + 0.08 * inch, PRODUCT_NAME)
+    canvas.setFillColor(colors.HexColor("#64748b"))
+    canvas.setFont("Helvetica", 8)
+    canvas.drawString(text_x, top - 0.07 * inch, MOTTO)
+    canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
+    canvas.setLineWidth(0.4)
+    canvas.line(0.55 * inch, page_h - 0.72 * inch, page_w - 0.55 * inch, page_h - 0.72 * inch)
+    canvas.setFillColor(colors.HexColor("#64748b"))
+    canvas.setFont("Helvetica", 8)
+    canvas.drawString(0.55 * inch, 0.32 * inch, f"{PRODUCT_NAME}  ·  {MOTTO}")
+    canvas.drawRightString(page_w - 0.55 * inch, 0.32 * inch, f"Page {canvas.getPageNumber()}")
+    canvas.restoreState()
+
+
 def device_pdf(graph: SurveyGraph, node: Node, title: str | None = None) -> bytes:
     buf = io.BytesIO()
     styles = _styles()
+    heading = title or f"{PRODUCT_NAME} device details"
     doc = SimpleDocTemplate(
         buf,
         pagesize=letter,
-        title=title or f"Device {node.label}",
-        author="SurveyMap",
+        title=heading,
+        author=PRODUCT_NAME,
         leftMargin=0.6 * inch,
         rightMargin=0.6 * inch,
-        topMargin=0.6 * inch,
+        topMargin=0.9 * inch,
         bottomMargin=0.6 * inch,
     )
     story = [
-        Paragraph(escape(title or "SurveyMap device details"), styles["title"]),
+        Paragraph(escape(heading), styles["title"]),
         Paragraph(escape(node.label), styles["h2"]),
         _property_table(device_properties(graph, node), styles),
     ]
-    doc.build(story)
+    doc.build(story, onFirstPage=_draw_chrome, onLaterPages=_draw_chrome)
     return buf.getvalue()
 
 
-def map_report_pdf(graph: SurveyGraph, title: str = "Survey map report") -> bytes:
+def map_report_pdf(graph: SurveyGraph, title: str = DEFAULT_REPORT_TITLE) -> bytes:
     buf = io.BytesIO()
     styles = _styles()
     doc = SimpleDocTemplate(
         buf,
         pagesize=letter,
         title=title,
-        author="SurveyMap",
+        author=PRODUCT_NAME,
         leftMargin=0.55 * inch,
         rightMargin=0.55 * inch,
-        topMargin=0.55 * inch,
-        bottomMargin=0.55 * inch,
+        topMargin=0.9 * inch,
+        bottomMargin=0.6 * inch,
     )
     meta = graph.meta or {}
     story: list = [
@@ -349,10 +384,10 @@ def map_report_pdf(graph: SurveyGraph, title: str = "Survey map report") -> byte
             )
         )
         story.append(links_table)
-    doc.build(story)
+    doc.build(story, onFirstPage=_draw_chrome, onLaterPages=_draw_chrome)
     return buf.getvalue()
 
 
 def safe_filename(name: str, suffix: str) -> str:
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") or "surveymap"
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-") or "netseer"
     return f"{stem[:80]}{suffix}"

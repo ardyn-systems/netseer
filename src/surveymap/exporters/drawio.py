@@ -48,7 +48,7 @@ def _label(node) -> str:
     return "&#xa;".join(parts)
 
 
-def export_drawio(graph: SurveyGraph, title: str = "Survey map") -> str:
+def export_drawio(graph: SurveyGraph, title: str = "NetSeer map") -> str:
     positions = layout_positions(graph)
     cells: list[str] = ['        <mxCell id="0"/>', '        <mxCell id="1" parent="0"/>']
     for node in graph.nodes:
@@ -84,8 +84,8 @@ def export_drawio(graph: SurveyGraph, title: str = "Survey map") -> str:
     body = "\n".join(cells)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
-        f'<mxfile host="SurveyMap" modified="2026-09-20" agent="SurveyMap" version="22.1.0">\n'
-        f'  <diagram id="survey" name="{escape(title)}">\n'
+        f'<mxfile host="NetSeer" modified="2026-09-20" agent="NetSeer" version="22.1.0">\n'
+        f'  <diagram id="netseer" name="{escape(title)}">\n'
         '    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" '
         'connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">\n'
         "      <root>\n"

@@ -42,8 +42,10 @@ def test_office_lan_has_ports_and_services():
     assert "http" in labels
     xml = export_drawio(graph)
     assert "http" in xml.lower()
+    assert 'host="NetSeer"' in xml
     vdx = export_vdx(graph)
     assert "http" in vdx.lower() or "tcp/80" in vdx.lower()
+    assert "<Creator>NetSeer</Creator>" in vdx
     vsdx = export_vsdx(graph)
     assert vsdx[:2] == b"PK"
     web = next(n for n in graph.nodes if "10.10.20.80" in n.ips or n.label == "10.10.20.80")
@@ -60,15 +62,19 @@ def test_office_lan_has_ports_and_services():
     text = device_plain_text(graph, web)
     assert "http tcp/80" in text
     assert web.vendor in text
+    assert "NetSeer device:" in text
     csv_body = device_csv(graph, web)
     assert "Field,Value" in csv_body
     xml = device_xml(graph, web)
     assert "<device" in xml and "http" in xml
     pdf = device_pdf(graph, web)
     assert pdf.startswith(b"%PDF")
+    assert b"NetSeer" in pdf
     report = map_report_pdf(graph, title="Office")
     assert report.startswith(b"%PDF")
     assert len(report) > 500
+    assert b"NetSeer" in report
+    assert b"/Image" in report or b"/XObject" in report
 
 
 def test_kismet_and_airodump():

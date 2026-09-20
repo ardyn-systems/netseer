@@ -1,10 +1,10 @@
 [project]
 name = "surveymap"
 version = "0.1.0"
-description = "Turn Layer 2/3 network surveys into interactive maps and draw.io / Visio exports."
+description = "NetSeer — turn traffic into terrain. Map Layer 2/3 surveys to interactive maps and draw.io / Visio exports."
 readme = "README.md"
 authors = [
-    { name = "SurveyMap" }
+    { name = "NetSeer" }
 ]
 requires-python = ">=3.12"
 dependencies = [
@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
+netseer = "surveymap.cli:main"
 surveymap = "surveymap.cli:main"
 
 [build-system]

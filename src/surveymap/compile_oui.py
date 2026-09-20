@@ -39,7 +39,7 @@ def compile_files(paths: list[Path], dest: Path | None = None) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compile IEEE OUI CSVs into surveymap data.")
+    parser = argparse.ArgumentParser(description="Compile IEEE OUI CSVs into NetSeer data.")
     parser.add_argument("csvs", nargs="+", type=Path)
     parser.add_argument("-o", "--output", type=Path, default=DATA)
     args = parser.parse_args()
