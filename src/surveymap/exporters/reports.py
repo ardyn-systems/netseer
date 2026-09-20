@@ -29,7 +29,7 @@ FIELD_ORDER = [
     ("kind", "Kind"),
     ("medium", "Medium"),
     ("roles", "Roles (server/client)"),
-    ("vendor", "Vendor"),
+    ("vendor", "OUI manufacturer"),
     ("macs", "MAC addresses"),
     ("ips", "IP addresses"),
     ("vlans", "VLANs"),
@@ -281,18 +281,24 @@ def map_report_pdf(graph: SurveyGraph, title: str = "Survey map report") -> byte
         Spacer(1, 8),
         Paragraph("Inventory", styles["h2"]),
     ]
-    inventory = [[Paragraph("<b>Device</b>", styles["cell"]), Paragraph("<b>Kind</b>", styles["cell"]),
-                  Paragraph("<b>IPs</b>", styles["cell"]), Paragraph("<b>Services</b>", styles["cell"])]]
+    inventory = [[
+        Paragraph("<b>Device</b>", styles["cell"]),
+        Paragraph("<b>Kind</b>", styles["cell"]),
+        Paragraph("<b>OUI manufacturer</b>", styles["cell"]),
+        Paragraph("<b>IPs</b>", styles["cell"]),
+        Paragraph("<b>Services</b>", styles["cell"]),
+    ]]
     for node in graph.nodes:
         inventory.append(
             [
                 Paragraph(escape(node.label), styles["cell"]),
                 Paragraph(escape(f"{node.kind} / {node.medium}"), styles["cell"]),
+                Paragraph(escape(node.vendor or "—"), styles["cell"]),
                 Paragraph(escape(_stringify(node.ips) or "—"), styles["cell"]),
                 Paragraph(escape(_stringify(node.services) or "—"), styles["cell"]),
             ]
         )
-    inv = Table(inventory, colWidths=[2.1 * inch, 1.4 * inch, 1.8 * inch, 1.7 * inch])
+    inv = Table(inventory, colWidths=[1.6 * inch, 1.15 * inch, 1.7 * inch, 1.35 * inch, 1.2 * inch])
     inv.setStyle(
         TableStyle(
             [

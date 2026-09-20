@@ -55,6 +55,8 @@ def export_vdx(graph: SurveyGraph, title: str = "Survey map") -> str:
             extra.append(node.ips[0])
         if node.macs:
             extra.append(node.macs[0])
+        if node.vendor:
+            extra.append(node.vendor)
         caption = node_service_caption(node)
         if caption:
             extra.append(caption)
@@ -160,6 +162,8 @@ def export_vsdx(graph: SurveyGraph, title: str = "Survey map") -> bytes:
             bits.append(escape(node.ips[0]))
         if node.macs:
             bits.append(escape(node.macs[0]))
+        if node.vendor:
+            bits.append(escape(node.vendor))
         caption = node_service_caption(node)
         if caption:
             bits.append(escape(caption))

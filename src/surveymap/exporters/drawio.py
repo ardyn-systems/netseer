@@ -31,6 +31,8 @@ def _label(node) -> str:
         parts.append(escape(node.ips[0]))
     if node.macs and node.kind in {"ap", "host", "gateway", "server"}:
         parts.append(escape(node.macs[0]))
+    if node.vendor:
+        parts.append(escape(node.vendor))
     extras = []
     if node.ssids and node.kind != "ap":
         extras.append("SSID " + escape(node.ssids[0]))

@@ -35,7 +35,8 @@ function nodeCaption(node) {
 
 function nodeLabel(node) {
   const lines = [node.label];
-  if (node.ips && node.ips[0] && node.ips[0] !== node.label) lines.push(node.ips[0]);
+    if node.ips and node.ips[0] and node.ips[0] !== node.label) lines.push(node.ips[0]);
+  if (node.vendor) lines.push(node.vendor);
   const cap = nodeCaption(node);
   if (cap) lines.push(cap);
   return lines.join("\n");
@@ -199,7 +200,7 @@ function inspect(kind, obj) {
         <dt>Roles</dt><dd>${escapeHtml((obj.roles || []).join(", ") || "—")}</dd>
         <dt>MACs</dt><dd>${escapeHtml((obj.macs || []).join(", ") || "—")}</dd>
         <dt>IPs</dt><dd>${escapeHtml((obj.ips || []).join(", ") || "—")}</dd>
-        <dt>Vendor</dt><dd>${escapeHtml(obj.vendor || "—")}</dd>
+        <dt>OUI manufacturer</dt><dd>${escapeHtml(obj.vendor || "—")}</dd>
         <dt>SSID</dt><dd>${escapeHtml((obj.ssids || []).join(", ") || "—")}</dd>
         <dt>Channel</dt><dd>${escapeHtml((obj.channels || []).join(", ") || "—")}</dd>
         <dt>Freq</dt><dd>${escapeHtml((obj.frequencies_mhz || []).map((f) => f + " MHz").join(", ") || "—")}</dd>

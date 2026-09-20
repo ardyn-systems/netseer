@@ -17,7 +17,8 @@ This is a web preview (not a compiled binary). It runs on Debian-family Linux an
 
 When the frames or survey rows include them:
 
-- MAC and IP addresses, vendor (short OUI table)
+- MAC and IP addresses
+- **OUI manufacturer** from the IEEE MA-L / MA-M / MA-S / CID registries (locally administered and unregistered prefixes are labeled as such)
 - VLANs, subnet membership, default gateway / DHCP options, OSPF
 - Wireless SSIDs, BSSID, channel, frequency, encryption, signal, GPS
 - **TCP/UDP ports and named services** on nodes and on client→server edges (HTTP, HTTPS/TLS, SSH, DNS, DHCP, NTP, SNMP, OSPF, and other well-known ports). Names also come from protocol metadata in the frames (DNS queries, HTTP `Host`, SSH ident, TLS handshake).
@@ -57,7 +58,15 @@ uv run surveymap --port 47331
 
 Open [http://127.0.0.1:47331](http://127.0.0.1:47331). The campus combined sample loads automatically. Drop your own capture onto the left panel, inspect a node for ports/services, then export draw.io or Visio.
 
-Bundled files live in `src/surveymap/data/`.
+Bundled files live in `src/surveymap/data/`. The OUI table is compiled from IEEE CSVs:
+
+```bash
+curl -L -o /tmp/oui.csv https://standards-oui.ieee.org/oui/oui.csv
+curl -L -o /tmp/mam.csv https://standards-oui.ieee.org/oui28/mam.csv
+curl -L -o /tmp/oui36.csv https://standards-oui.ieee.org/oui36/oui36.csv
+curl -L -o /tmp/cid.csv https://standards-oui.ieee.org/cid/cid.csv
+uv run python -m surveymap.compile_oui /tmp/oui.csv /tmp/mam.csv /tmp/oui36.csv /tmp/cid.csv
+```
 
 ## Tests
 

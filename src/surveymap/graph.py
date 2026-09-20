@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from surveymap.models import GpsFix, Link, Node, SurveyGraph
-from surveymap.oui import vendor_from_mac
+from surveymap.oui import lookup_oui, manufacturers_for_macs
 from surveymap.services import CLIENT_SIDE_PORTS, WELL_KNOWN_SERVER_PORTS, format_port, service_for_port
 
 
@@ -166,10 +166,12 @@ class GraphBuilder:
         _merge_unique(rec["macs"], [mac])
         if wireless:
             rec["medium"] = "wireless"
-        if vendor:
-            rec["vendor"] = vendor
-        elif rec["vendor"] is None:
-            rec["vendor"] = vendor_from_mac(mac)
+        info = lookup_oui(mac)
+        rec["vendor"] = manufacturers_for_macs(rec["macs"])
+        rec["extra"]["oui_prefix"] = info["oui_prefix"]
+        rec["extra"]["oui_assignment"] = info["oui_assignment"]
+        if vendor and vendor not in {info["manufacturer"], ""}:
+            rec["extra"]["survey_manufacturer"] = vendor
         if label and rec["label"] in {mac, node_id.split(":", 1)[-1]}:
             rec["label"] = label
         return node_id
@@ -564,6 +566,8 @@ class GraphBuilder:
             prefix = self.netmasks.get(ip)
             self.observe_subnet(ip, prefix)
             rec = self.devices.get(node_id)
+            if rec and rec["macs"]:
+                rec["vendor"] = manufacturers_for_macs(rec["macs"])
             if rec and rec["label"] in rec["macs"] and rec["ips"]:
                 rec["label"] = rec["ips"][0]
             if rec and rec["ssids"] and rec["kind"] == "ap":

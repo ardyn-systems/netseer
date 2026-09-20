@@ -53,8 +53,13 @@ def test_office_lan_has_ports_and_services():
     assert "IP addresses" in names
     assert "Services" in names
     assert "Ports" in names
+    assert "OUI manufacturer" in names
+    assert web.vendor
+    assert "Unknown" not in web.vendor
+    assert "Super Micro" in web.vendor or "Supermicro" in web.vendor
     text = device_plain_text(graph, web)
     assert "http tcp/80" in text
+    assert web.vendor in text
     csv_body = device_csv(graph, web)
     assert "Field,Value" in csv_body
     xml = device_xml(graph, web)
@@ -91,3 +96,25 @@ def test_unsupported_and_empty(tmp_path):
         assert False, "expected empty survey"
     except Exception as exc:
         assert "No hosts" in str(exc)
+
+
+def test_ieee_oui_lookup_and_special_macs():
+    from surveymap.oui import (
+        LOCALLY_ADMINISTERED,
+        UNKNOWN,
+        lookup_oui,
+        vendor_from_mac,
+    )
+
+    cisco = lookup_oui("00:1a:2f:aa:00:01")
+    assert "Cisco" in cisco["manufacturer"]
+    assert cisco["oui_assignment"].startswith("MA-")
+    apple = vendor_from_mac("3c:22:fb:10:00:01")
+    assert "Apple" in apple
+    local = vendor_from_mac("02:11:22:33:44:55")
+    assert local == LOCALLY_ADMINISTERED
+    unknown = lookup_oui("04:00:00:00:00:01")
+    # Either unregistered or a real assignment; never locally administered.
+    assert unknown["manufacturer"] != LOCALLY_ADMINISTERED
+    if unknown["oui_assignment"] == "unregistered":
+        assert unknown["manufacturer"] == UNKNOWN
