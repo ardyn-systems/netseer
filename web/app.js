@@ -35,7 +35,7 @@ function nodeCaption(node) {
 
 function nodeLabel(node) {
   const lines = [node.label];
-    if node.ips and node.ips[0] and node.ips[0] !== node.label) lines.push(node.ips[0]);
+  if (node.ips && node.ips[0] && node.ips[0] !== node.label) lines.push(node.ips[0]);
   if (node.vendor) lines.push(node.vendor);
   const cap = nodeCaption(node);
   if (cap) lines.push(cap);
