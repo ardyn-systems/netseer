@@ -159,7 +159,11 @@ function renderMap() {
     ],
     layout: { name: "cose", animate: false, padding: 24, nodeOverlap: 16, gravity: 0.4 },
   });
-  state.cy.on("tap", "node", (evt) => inspect("node", evt.target.data("raw")));
+  state.cy.on("tap", "node", (evt) => {
+    const node = evt.target.data("raw");
+    inspect("node", node);
+    openDeviceDialog(node);
+  });
   state.cy.on("tap", "edge", (evt) => inspect("link", evt.target.data("raw")));
   state.cy.on("tap", (evt) => {
     if (evt.target === state.cy) inspect(null, null);
@@ -253,7 +257,7 @@ function applyGraph(graph, title) {
   const services = new Set();
   for (const node of graph.nodes || []) (node.services || []).forEach((s) => services.add(s));
   setStatus(`${n} nodes · ${e} links · ${services.size} services`);
-  ["btn-drawio", "btn-vsdx", "btn-vdx"].forEach((id) => {
+  ["btn-drawio", "btn-vsdx", "btn-vdx", "btn-report"].forEach((id) => {
     el(id).disabled = n === 0;
   });
   show("empty", n === 0);
@@ -317,6 +321,105 @@ async function exportKind(kind, filename) {
   URL.revokeObjectURL(url);
 }
 
+let activeDevice = null;
+
+function showToast() {
+  const toast = el("copy-toast");
+  toast.classList.remove("hidden");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => toast.classList.add("hidden"), 1400);
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+  showToast();
+}
+
+function closeDeviceDialog() {
+  el("device-modal").classList.add("hidden");
+  activeDevice = null;
+}
+
+async function openDeviceDialog(node) {
+  if (!state.graph || !node) return;
+  activeDevice = node;
+  el("device-title").textContent = node.label || node.id;
+  el("device-fields").innerHTML = "<p class='hint'>Loading extracted properties…</p>";
+  el("device-modal").classList.remove("hidden");
+  try {
+    const payload = await parseResponse(
+      await fetch("/api/device/properties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...state.graph, title: state.title, node_id: node.id }),
+      })
+    );
+    activeDevice = { ...node, properties: payload.properties, text: payload.properties };
+    const fields = el("device-fields");
+    fields.innerHTML = "";
+    for (const row of payload.properties) {
+      const wrap = document.createElement("div");
+      wrap.className = "field-row";
+      const value = row.value || "—";
+      wrap.innerHTML = `<dt>${escapeHtml(row.name)}</dt><dd></dd>`;
+      wrap.querySelector("dd").textContent = value;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn ghost copy-one";
+      btn.textContent = "Copy";
+      btn.addEventListener("click", () => copyText(`${row.name}: ${value}`));
+      wrap.appendChild(btn);
+      fields.appendChild(wrap);
+    }
+  } catch (err) {
+    el("device-fields").innerHTML = `<p class="hint">${escapeHtml(err.message || String(err))}</p>`;
+  }
+}
+
+async function exportDevice(fmt) {
+  if (!state.graph || !activeDevice) return;
+  const res = await fetch(`/api/export/device/${fmt}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...state.graph, title: state.title, node_id: activeDevice.id }),
+  });
+  if (!res.ok) {
+    fail(new Error("Device export failed"));
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stem = (activeDevice.label || "device").replace(/[^A-Za-z0-9._-]+/g, "-");
+  a.href = url;
+  a.download = `${stem}-device.${fmt}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function copyAllDevice() {
+  if (!state.graph || !activeDevice) return;
+  const res = await fetch("/api/export/device/txt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...state.graph, title: state.title, node_id: activeDevice.id }),
+  });
+  if (!res.ok) {
+    fail(new Error("Could not copy device details"));
+    return;
+  }
+  await copyText(await res.text());
+}
+
 async function init() {
   const samples = await parseResponse(await fetch("/api/samples"));
   const list = el("sample-list");
@@ -361,8 +464,20 @@ async function init() {
   el("btn-drawio").addEventListener("click", () => exportKind("drawio", "survey-map.drawio"));
   el("btn-vsdx").addEventListener("click", () => exportKind("vsdx", "survey-map.vsdx"));
   el("btn-vdx").addEventListener("click", () => exportKind("vdx", "survey-map.vdx"));
+  el("btn-report").addEventListener("click", () => exportKind("report.pdf", "survey-map-report.pdf"));
   el("btn-dismiss").addEventListener("click", () => show("error", false));
   el("btn-menu").addEventListener("click", () => el("sidebar").classList.toggle("open"));
+  el("device-close").addEventListener("click", closeDeviceDialog);
+  el("device-modal").addEventListener("click", (e) => {
+    if (e.target === el("device-modal")) closeDeviceDialog();
+  });
+  el("copy-all").addEventListener("click", copyAllDevice);
+  document.querySelectorAll("[data-device-export]").forEach((btn) => {
+    btn.addEventListener("click", () => exportDevice(btn.dataset.deviceExport));
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDeviceDialog();
+  });
 
   await loadSample("campus-all", "Campus survey (combined)");
 }

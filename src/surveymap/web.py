@@ -7,7 +7,18 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from surveymap.detect import EmptySurveyError, UnsupportedSurveyError
-from surveymap.exporters import export_drawio, export_vdx, export_vsdx
+from surveymap.exporters import (
+    device_csv,
+    device_pdf,
+    device_plain_text,
+    device_xml,
+    export_drawio,
+    export_vdx,
+    export_vsdx,
+    map_report_pdf,
+    safe_filename,
+)
+from surveymap.exporters.reports import device_properties
 from surveymap.ingest import ingest_files
 from surveymap.samples import SAMPLES, files_for_sample
 from surveymap.serialize import graph_from_dict
@@ -94,6 +105,69 @@ def export_vsdx_api(body: dict):
         content=blob,
         media_type="application/vnd.visio",
         headers={"Content-Disposition": 'attachment; filename="survey-map.vsdx"'},
+    )
+
+
+def _node_from_body(body: dict):
+    graph, title = _graph_from_body(body)
+    node_id = body.get("node_id")
+    node = next((n for n in graph.nodes if n.id == node_id), None)
+    if node is None:
+        raise HTTPException(status_code=404, detail="Unknown device on this map.")
+    return graph, node, title
+
+
+@app.post("/api/device/properties")
+def device_properties_api(body: dict):
+    graph, node, _title = _node_from_body(body)
+    return {
+        "id": node.id,
+        "label": node.label,
+        "kind": node.kind,
+        "properties": device_properties(graph, node),
+    }
+
+
+@app.post("/api/export/device/{fmt}")
+def export_device_api(fmt: str, body: dict):
+    graph, node, title = _node_from_body(body)
+    stem = safe_filename(node.label or node.id, "")
+    if fmt == "txt":
+        return Response(
+            content=device_plain_text(graph, node),
+            media_type="text/plain",
+            headers={"Content-Disposition": f'attachment; filename="{stem}-device.txt"'},
+        )
+    if fmt == "csv":
+        return Response(
+            content=device_csv(graph, node),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{stem}-device.csv"'},
+        )
+    if fmt == "xml":
+        return Response(
+            content=device_xml(graph, node),
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{stem}-device.xml"'},
+        )
+    if fmt == "pdf":
+        return Response(
+            content=device_pdf(graph, node, title=f"{title} — {node.label}"),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{stem}-device.pdf"'},
+        )
+    raise HTTPException(status_code=404, detail="Use txt, csv, xml, or pdf.")
+
+
+@app.post("/api/export/report.pdf")
+def export_report_pdf(body: dict):
+    graph, title = _graph_from_body(body)
+    blob = map_report_pdf(graph, title=f"{title} report")
+    name = safe_filename(title, "-report.pdf")
+    return Response(
+        content=blob,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
 
 

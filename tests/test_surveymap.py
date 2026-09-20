@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from surveymap.detect import sniff_format
 from surveymap.exporters.drawio import export_drawio
+from surveymap.exporters.reports import (
+    device_csv,
+    device_pdf,
+    device_plain_text,
+    device_properties,
+    device_xml,
+    map_report_pdf,
+)
 from surveymap.exporters.visio import export_vdx, export_vsdx
 from surveymap.generate_samples import write_all
 from surveymap.ingest import ingest_files
@@ -38,6 +46,24 @@ def test_office_lan_has_ports_and_services():
     assert "http" in vdx.lower() or "tcp/80" in vdx.lower()
     vsdx = export_vsdx(graph)
     assert vsdx[:2] == b"PK"
+    web = next(n for n in graph.nodes if "10.10.20.80" in n.ips or n.label == "10.10.20.80")
+    props = device_properties(graph, web)
+    names = {row["name"] for row in props}
+    assert "MAC addresses" in names
+    assert "IP addresses" in names
+    assert "Services" in names
+    assert "Ports" in names
+    text = device_plain_text(graph, web)
+    assert "http tcp/80" in text
+    csv_body = device_csv(graph, web)
+    assert "Field,Value" in csv_body
+    xml = device_xml(graph, web)
+    assert "<device" in xml and "http" in xml
+    pdf = device_pdf(graph, web)
+    assert pdf.startswith(b"%PDF")
+    report = map_report_pdf(graph, title="Office")
+    assert report.startswith(b"%PDF")
+    assert len(report) > 500
 
 
 def test_kismet_and_airodump():

@@ -136,6 +136,65 @@ section { margin-bottom: 1.25rem; }
 }
 .chip.warn { background: #3b2508; border-color: #a16207; color: #fde68a; }
 
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(7, 12, 22, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.modal-card {
+  width: min(720px, 100%);
+  max-height: min(88vh, 900px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  box-shadow: var(--shadow);
+  padding: 1rem 1rem 1.1rem;
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+.modal-kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.modal-head h2 { margin: 0.15rem 0 0; font-size: 1.15rem; text-transform: none; letter-spacing: 0; color: var(--text); }
+.modal-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.device-fields { display: grid; gap: 0.35rem; }
+.field-row {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.45rem 0.5rem;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.field-row dt { color: var(--muted); font-size: 0.78rem; }
+.field-row dd { margin: 0; font-size: 0.88rem; white-space: pre-wrap; word-break: break-word; }
+.copy-one { padding: 0.2rem 0.45rem; font-size: 0.75rem; }
+.toast {
+  background: #134e4a;
+  color: #ccfbf1;
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+  margin: 0 0 0.6rem;
+}
+
 @media (max-width: 960px) {
   .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: calc(100% - 92px); }
   .sidebar { display: none; border-right: 0; border-bottom: 1px solid var(--line); max-height: 42vh; }
@@ -143,4 +202,6 @@ section { margin-bottom: 1.25rem; }
   .inspector { max-height: 36vh; }
   .menu-toggle { display: inline-block; }
   .top-actions .btn:not(.menu-toggle) { padding: 0.4rem 0.5rem; font-size: 0.8rem; }
+  .field-row { grid-template-columns: 1fr auto; }
+  .field-row dt { grid-column: 1 / -1; }
 }

@@ -22,12 +22,16 @@ When the frames or survey rows include them:
 - Wireless SSIDs, BSSID, channel, frequency, encryption, signal, GPS
 - **TCP/UDP ports and named services** on nodes and on client→server edges (HTTP, HTTPS/TLS, SSH, DNS, DHCP, NTP, SNMP, OSPF, and other well-known ports). Names also come from protocol metadata in the frames (DNS queries, HTTP `Host`, SSH ident, TLS handshake).
 
+Click a device to open a **detail window** with every extracted field, per-field copy, copy-all, and downloads (PDF, CSV, XML, plain text). **Report PDF** in the toolbar dumps the whole map.
+
 Wired L2, L3, wireless, VLAN, and service edges can be toggled independently.
 
 ## Exports (same attributes as the preview)
 
 - **draw.io** — `.drawio` mxfile XML
 - **Visio** — `.vsdx` (Open XML) and `.vdx` (Visio 2003 XML)
+- **Device details** — PDF, CSV, XML, and `.txt` from the device window
+- **Map report** — PDF of every device and link
 
 Node labels include identity plus listen ports/services. Edge labels include `service proto/port` (for example `http tcp/80`).
 
