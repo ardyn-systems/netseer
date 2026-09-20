@@ -89,6 +89,23 @@ def _undirected_id(kind: str, a: str, b: str) -> str:
     return f"{kind}:{lo}:{hi}"
 
 
+MAC_ROLE_FIELDS = (("mac_tx", "TX"), ("mac_rx", "RX"), ("mac_da", "DA"), ("mac_ra", "RA"))
+MAC_ROLE_KEYS = {"tx", "rx", "da", "ra"}
+
+
+def mac_role_lines(node: Any, *, limit: int | None = None, empty: str | None = None) -> list[str]:
+    """Labeled TX/RX/DA/RA lines; omit empty roles unless `empty` is set."""
+    lines: list[str] = []
+    for attr, tag in MAC_ROLE_FIELDS:
+        addrs = getattr(node, attr, None) or []
+        if addrs:
+            shown = addrs if limit is None else addrs[:limit]
+            lines.append(f"{tag} {', '.join(str(a) for a in shown)}")
+        elif empty is not None:
+            lines.append(f"{tag} {empty}")
+    return lines
+
+
 class GraphBuilder:
     """Accumulate L2/L3/RF observations into a survey graph."""
 
@@ -116,6 +133,10 @@ class GraphBuilder:
                 "label": node_id.split(":", 1)[-1],
                 "medium": "wired",
                 "macs": [],
+                "mac_tx": [],
+                "mac_rx": [],
+                "mac_da": [],
+                "mac_ra": [],
                 "ips": [],
                 "ssids": [],
                 "channels": [],
@@ -157,6 +178,7 @@ class GraphBuilder:
         wireless: bool = False,
         vendor: str | None = None,
         label: str | None = None,
+        mac_roles: tuple[str, ...] | list[str] | None = None,
     ) -> str | None:
         mac = normalize_mac(mac)
         if not mac:
@@ -164,6 +186,10 @@ class GraphBuilder:
         node_id = mac_id(mac)
         rec = self._device(node_id)
         _merge_unique(rec["macs"], [mac])
+        for role in mac_roles or ():
+            key = str(role).lower()
+            if key in MAC_ROLE_KEYS:
+                _merge_unique(rec[f"mac_{key}"], [mac])
         if wireless:
             rec["medium"] = "wireless"
         info = lookup_oui(mac)
@@ -207,6 +233,9 @@ class GraphBuilder:
             rec = self._device(mac_node)
             if src:
                 _merge_unique(rec["ips"], src["ips"])
+                _merge_unique(rec["macs"], src.get("macs") or [])
+                for role in MAC_ROLE_KEYS:
+                    _merge_unique(rec[f"mac_{role}"], src.get(f"mac_{role}") or [])
                 _merge_unique(rec["roles"], src["roles"])
                 _merge_unique(rec["vlans"], src["vlans"])
                 _merge_unique(rec["services"], src.get("services") or [])
@@ -416,8 +445,8 @@ class GraphBuilder:
         _merge_unique(rec["vlans"], vlans or [])
 
     def add_l2(self, src_mac: str | None, dst_mac: str | None, vlan: int | None = None) -> None:
-        src = self.observe_mac(src_mac)
-        dst = self.observe_mac(dst_mac)
+        src = self.observe_mac(src_mac, mac_roles=("tx",))
+        dst = self.observe_mac(dst_mac, mac_roles=("da", "rx"))
         if src and dst:
             self._link(src, dst, kind="l2", label="L2", medium="wired", vlans=[vlan] if vlan else None)
         self.observe_vlan(vlan, src)
@@ -583,6 +612,10 @@ class GraphBuilder:
                     label=rec["label"],
                     medium=rec["medium"],
                     macs=rec["macs"],
+                    mac_tx=rec.get("mac_tx") or [],
+                    mac_rx=rec.get("mac_rx") or [],
+                    mac_da=rec.get("mac_da") or [],
+                    mac_ra=rec.get("mac_ra") or [],
                     ips=rec["ips"],
                     ssids=rec["ssids"],
                     channels=rec["channels"],

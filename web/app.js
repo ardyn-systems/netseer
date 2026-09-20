@@ -1,8 +1,15 @@
 /* NetSeer preview — cytoscape map, samples, upload, export. */
+const HIDDEN_SAMPLES_KEY = "netseer.hiddenSamples";
+const ZOOM_MIN = 0.2;
+const ZOOM_MAX = 4;
+
 const state = {
   graph: null,
   title: "NetSeer map",
   cy: null,
+  catalog: [],
+  surveys: [],
+  activeId: null,
   filters: {
     l2: true,
     l3: true,
@@ -33,9 +40,31 @@ function nodeCaption(node) {
   return (node.services || []).slice(0, 3).join(" · ");
 }
 
+function macRoleLines(node) {
+  const lines = [];
+  for (const [key, tag] of [
+    ["mac_tx", "TX"],
+    ["mac_rx", "RX"],
+    ["mac_da", "DA"],
+    ["mac_ra", "RA"],
+  ]) {
+    const addrs = node[key] || [];
+    if (addrs.length) lines.push(`${tag} ${addrs.slice(0, 2).join(", ")}`);
+  }
+  return lines;
+}
+
+function macRoleValue(addrs) {
+  if (addrs && addrs.length) return addrs.join(", ");
+  return "not present";
+}
+
 function nodeLabel(node) {
   const lines = [node.label];
   if (node.ips && node.ips[0] && node.ips[0] !== node.label) lines.push(node.ips[0]);
+  const roles = macRoleLines(node);
+  if (roles.length) lines.push(...roles.slice(0, 3));
+  else if (node.macs && node.macs[0] && node.macs[0] !== node.label) lines.push(node.macs[0]);
   if (node.vendor) lines.push(node.vendor);
   const cap = nodeCaption(node);
   if (cap) lines.push(cap);
@@ -108,6 +137,11 @@ function renderMap() {
   state.cy = cytoscape({
     container,
     elements: toElements(state.graph),
+    minZoom: ZOOM_MIN,
+    maxZoom: ZOOM_MAX,
+    wheelSensitivity: 0.35,
+    userZoomingEnabled: true,
+    userPanningEnabled: true,
     style: [
       {
         selector: "node",
@@ -169,6 +203,8 @@ function renderMap() {
   state.cy.on("tap", (evt) => {
     if (evt.target === state.cy) inspect(null, null);
   });
+  state.cy.on("zoom", syncZoomUi);
+  syncZoomUi();
 }
 
 function chips(values) {
@@ -198,7 +234,11 @@ function inspect(kind, obj) {
       <dl class="kv">
         <dt>Kind</dt><dd>${escapeHtml(obj.kind)} · ${escapeHtml(obj.medium)}</dd>
         <dt>Roles</dt><dd>${escapeHtml((obj.roles || []).join(", ") || "—")}</dd>
-        <dt>MACs</dt><dd>${escapeHtml((obj.macs || []).join(", ") || "—")}</dd>
+        <dt>TX MAC</dt><dd>${escapeHtml(macRoleValue(obj.mac_tx))}</dd>
+        <dt>RX MAC</dt><dd>${escapeHtml(macRoleValue(obj.mac_rx))}</dd>
+        <dt>DA MAC</dt><dd>${escapeHtml(macRoleValue(obj.mac_da))}</dd>
+        <dt>RA MAC</dt><dd>${escapeHtml(macRoleValue(obj.mac_ra))}</dd>
+        ${!(obj.mac_tx || []).length && !(obj.mac_rx || []).length && !(obj.mac_da || []).length && !(obj.mac_ra || []).length && (obj.macs || []).length ? `<dt>MAC</dt><dd>${escapeHtml(obj.macs.join(", "))}</dd>` : ""}
         <dt>IPs</dt><dd>${escapeHtml((obj.ips || []).join(", ") || "—")}</dd>
         <dt>OUI manufacturer</dt><dd>${escapeHtml(obj.vendor || "—")}</dd>
         <dt>SSID</dt><dd>${escapeHtml((obj.ssids || []).join(", ") || "—")}</dd>
@@ -250,9 +290,10 @@ async function parseResponse(res) {
   return payload;
 }
 
-function applyGraph(graph, title) {
+function applyGraph(graph, title, surveyId) {
   state.graph = graph;
   state.title = title || "NetSeer map";
+  if (surveyId) state.activeId = surveyId;
   const n = graph.nodes?.length || 0;
   const e = graph.links?.length || 0;
   const services = new Set();
@@ -265,6 +306,28 @@ function applyGraph(graph, title) {
   show("loading", false);
   show("error", false);
   renderMap();
+  renderSurveyList();
+}
+
+function clearMap() {
+  if (state.cy) {
+    state.cy.destroy();
+    state.cy = null;
+  }
+  state.graph = null;
+  state.title = "NetSeer map";
+  state.activeId = null;
+  ["btn-drawio", "btn-vsdx", "btn-vdx", "btn-report"].forEach((id) => {
+    el(id).disabled = true;
+  });
+  inspect(null, null);
+  closeDeviceDialog();
+  show("empty", true);
+  show("loading", false);
+  show("error", false);
+  setStatus("No survey loaded");
+  syncZoomUi();
+  renderSurveyList();
 }
 
 function fail(err) {
@@ -275,16 +338,112 @@ function fail(err) {
   setStatus("Parse failed");
 }
 
-async function loadSample(id, name) {
+function hiddenSampleIds() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HIDDEN_SAMPLES_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHiddenSampleIds(ids) {
+  localStorage.setItem(HIDDEN_SAMPLES_KEY, JSON.stringify(ids));
+}
+
+function sampleToSurvey(sample) {
+  return {
+    id: sample.id,
+    kind: "sample",
+    name: sample.name,
+    summary: sample.summary,
+  };
+}
+
+function renderSurveyList() {
+  const list = el("sample-list");
+  list.innerHTML = "";
+  const hidden = hiddenSampleIds();
+  el("survey-empty").classList.toggle("hidden", state.surveys.length > 0);
+  el("btn-restore-samples").classList.toggle("hidden", hidden.length === 0);
+  for (const item of state.surveys) {
+    const row = document.createElement("li");
+    row.className = "survey-item";
+    const load = document.createElement("button");
+    load.type = "button";
+    load.className = "survey-load";
+    if (item.id === state.activeId) load.classList.add("active");
+    load.dataset.id = item.id;
+    const kicker = item.kind === "upload" ? "Uploaded capture" : item.summary;
+    load.innerHTML = `${escapeHtml(item.name)}<small>${escapeHtml(kicker)}</small>`;
+    load.addEventListener("click", () => selectSurvey(item.id));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "btn survey-remove";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${item.name}`);
+    remove.addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      removeSurvey(item.id);
+    });
+    row.append(load, remove);
+    list.appendChild(row);
+  }
+}
+
+async function selectSurvey(id) {
+  const item = state.surveys.find((s) => s.id === id);
+  if (!item) return;
+  if (item.kind === "upload") {
+    applyGraph(item.graph, item.name, item.id);
+    return;
+  }
   setBusy(true);
   try {
-    const graph = await parseResponse(await fetch(`/api/samples/${id}/graph`));
-    applyGraph(graph, name);
-    document.querySelectorAll("#sample-list button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.id === id);
-    });
+    const graph = await parseResponse(await fetch(`/api/samples/${item.id}/graph`));
+    applyGraph(graph, item.name, item.id);
   } catch (err) {
     fail(err);
+  }
+}
+
+function removeSurvey(id) {
+  const item = state.surveys.find((s) => s.id === id);
+  if (!item) return;
+  const idx = state.surveys.findIndex((s) => s.id === id);
+  state.surveys = state.surveys.filter((s) => s.id !== id);
+  if (item.kind === "sample") {
+    const hidden = hiddenSampleIds();
+    if (!hidden.includes(item.id)) {
+      hidden.push(item.id);
+      saveHiddenSampleIds(hidden);
+    }
+  }
+  if (state.activeId !== id) {
+    renderSurveyList();
+    return;
+  }
+  closeDeviceDialog();
+  const next = state.surveys[idx] || state.surveys[idx - 1] || state.surveys[0];
+  if (next) selectSurvey(next.id);
+  else clearMap();
+}
+
+function restoreBundledSamples() {
+  saveHiddenSampleIds([]);
+  const present = new Set(state.surveys.map((s) => s.id));
+  for (const sample of state.catalog) {
+    if (!present.has(sample.id)) state.surveys.push(sampleToSurvey(sample));
+  }
+  const uploads = state.surveys.filter((s) => s.kind === "upload");
+  const samples = state.catalog
+    .map((sample) => state.surveys.find((s) => s.id === sample.id))
+    .filter(Boolean);
+  state.surveys = [...uploads, ...samples];
+  renderSurveyList();
+  if (!state.activeId && state.surveys.length) {
+    const campus = state.surveys.find((s) => s.id === "campus-all") || state.surveys[0];
+    selectSurvey(campus.id);
   }
 }
 
@@ -293,13 +452,54 @@ async function loadFile(file) {
   const body = new FormData();
   body.append("file", file);
   try {
-    const graph = await parseResponse(
-      await fetch("/api/parse", { method: "POST", body })
-    );
-    applyGraph(graph, file.name);
+    const graph = await parseResponse(await fetch("/api/parse", { method: "POST", body }));
+    const id = `upload:${file.name}`;
+    const existing = state.surveys.findIndex((s) => s.id === id);
+    const item = {
+      id,
+      kind: "upload",
+      name: file.name,
+      summary: "Uploaded capture",
+      graph,
+    };
+    if (existing >= 0) state.surveys.splice(existing, 1, item);
+    else state.surveys.unshift(item);
+    applyGraph(graph, file.name, id);
   } catch (err) {
     fail(err);
   }
+}
+
+async function loadFiles(files) {
+  for (const file of files) {
+    if (file) await loadFile(file);
+  }
+}
+
+function zoomPct() {
+  if (!state.cy) return 100;
+  return Math.round(state.cy.zoom() * 100);
+}
+
+function syncZoomUi() {
+  const slider = el("zoom-slider");
+  const label = el("zoom-pct");
+  const fit = el("zoom-fit");
+  if (!slider || !label) return;
+  const on = Boolean(state.cy);
+  slider.disabled = !on;
+  if (fit) fit.disabled = !on;
+  const pct = Math.min(400, Math.max(20, zoomPct()));
+  if (document.activeElement !== slider) slider.value = String(pct);
+  label.textContent = `${zoomPct()}%`;
+}
+
+function applyZoomPct(pct) {
+  if (!state.cy) return;
+  const level = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(pct) / 100));
+  const renderedPosition = { x: state.cy.width() / 2, y: state.cy.height() / 2 };
+  state.cy.zoom({ level, renderedPosition });
+  syncZoomUi();
 }
 
 async function exportKind(kind, filename) {
@@ -423,20 +623,16 @@ async function copyAllDevice() {
 
 async function init() {
   const samples = await parseResponse(await fetch("/api/samples"));
-  const list = el("sample-list");
-  list.innerHTML = "";
-  for (const s of samples) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.dataset.id = s.id;
-    btn.innerHTML = `${escapeHtml(s.name)}<small>${escapeHtml(s.summary)}</small>`;
-    btn.addEventListener("click", () => loadSample(s.id, s.name));
-    list.appendChild(btn);
-  }
+  state.catalog = samples;
+  const hidden = new Set(hiddenSampleIds());
+  state.surveys = samples.filter((s) => !hidden.has(s.id)).map(sampleToSurvey);
+  renderSurveyList();
+  syncZoomUi();
 
   el("file").addEventListener("change", (e) => {
-    const file = e.target.files?.[0];
-    if (file) loadFile(file);
+    const files = [...(e.target.files || [])];
+    e.target.value = "";
+    if (files.length) loadFiles(files);
   });
   const drop = el("dropzone");
   ["dragenter", "dragover"].forEach((ev) =>
@@ -452,8 +648,15 @@ async function init() {
     })
   );
   drop.addEventListener("drop", (e) => {
-    const file = e.dataTransfer.files?.[0];
-    if (file) loadFile(file);
+    const files = [...(e.dataTransfer.files || [])];
+    if (files.length) loadFiles(files);
+  });
+  el("btn-restore-samples").addEventListener("click", restoreBundledSamples);
+  el("zoom-slider").addEventListener("input", (e) => applyZoomPct(e.target.value));
+  el("zoom-fit").addEventListener("click", () => {
+    if (!state.cy) return;
+    state.cy.fit(undefined, 24);
+    syncZoomUi();
   });
 
   document.querySelectorAll("[data-filter]").forEach((box) => {
@@ -480,7 +683,10 @@ async function init() {
     if (e.key === "Escape") closeDeviceDialog();
   });
 
-  await loadSample("campus-all", "Campus survey (combined)");
+  const first =
+    state.surveys.find((s) => s.id === "campus-all") || state.surveys[0];
+  if (first) await selectSurvey(first.id);
+  else clearMap();
 }
 
 init().catch((err) => fail(err));

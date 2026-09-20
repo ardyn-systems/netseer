@@ -51,8 +51,18 @@ def test_office_lan_has_ports_and_services():
     web = next(n for n in graph.nodes if "10.10.20.80" in n.ips or n.label == "10.10.20.80")
     props = device_properties(graph, web)
     names = {row["name"] for row in props}
-    assert "MAC addresses" in names
+    assert "TX MAC" in names
+    assert "RX MAC" in names
+    assert "DA MAC" in names
+    assert "RA MAC" in names
+    assert "MAC addresses" not in names
     assert "IP addresses" in names
+    assert web.mac_tx
+    assert "00:25:90:20:00:50" in web.mac_tx
+    assert web.mac_ra == []
+    text = device_plain_text(graph, web)
+    assert "TX MAC:" in text
+    assert "RA MAC: not present" in text
     assert "Services" in names
     assert "Ports" in names
     assert "OUI manufacturer" in names
@@ -88,6 +98,26 @@ def test_kismet_and_airodump():
     dump = ingest_files(files_for_sample("airodump"))
     assert any(n.kind == "ap" for n in dump.nodes)
     assert any(e.kind == "wireless" for e in dump.links)
+
+
+def test_mac_roles_from_wired_and_dot11():
+    if not (DATA_DIR / "office-lan.pcap").exists():
+        write_all(DATA_DIR)
+    wired = ingest_files(files_for_sample("office-lan"))
+    gw = next(n for n in wired.nodes if "10.10.10.1" in n.ips)
+    assert gw.mac_da
+    assert gw.mac_rx
+    assert gw.mac_ra == []
+    wifi = ingest_files(files_for_sample("wifi-campus"))
+    assert any(n.mac_ra for n in wifi.nodes)
+    assert any(n.mac_tx for n in wifi.nodes)
+    xml = export_drawio(wifi)
+    assert "TX " in xml
+    assert "RA " in xml
+    phone = next(n for n in wifi.nodes if n.macs and n.macs[0].startswith("a4:c3:f0"))
+    text = device_plain_text(wifi, phone)
+    assert "TX MAC:" in text
+    assert "RA MAC:" in text
 
 
 def test_unsupported_and_empty(tmp_path):

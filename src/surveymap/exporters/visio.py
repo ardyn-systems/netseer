@@ -5,6 +5,7 @@ from io import BytesIO
 from xml.sax.saxutils import escape
 
 from surveymap.exporters.layout import layout_positions
+from surveymap.graph import mac_role_lines
 from surveymap.models import SurveyGraph
 from surveymap.services import node_service_caption
 
@@ -53,8 +54,7 @@ def export_vdx(graph: SurveyGraph, title: str = "NetSeer map") -> str:
         extra = []
         if node.ips:
             extra.append(node.ips[0])
-        if node.macs:
-            extra.append(node.macs[0])
+        extra.extend(mac_role_lines(node, limit=2) or ([node.macs[0]] if node.macs else []))
         if node.vendor:
             extra.append(node.vendor)
         caption = node_service_caption(node)
@@ -160,7 +160,10 @@ def export_vsdx(graph: SurveyGraph, title: str = "NetSeer map") -> bytes:
         bits = [label]
         if node.ips:
             bits.append(escape(node.ips[0]))
-        if node.macs:
+        role_macs = mac_role_lines(node, limit=2)
+        if role_macs:
+            bits.extend(escape(line) for line in role_macs)
+        elif node.macs:
             bits.append(escape(node.macs[0]))
         if node.vendor:
             bits.append(escape(node.vendor))

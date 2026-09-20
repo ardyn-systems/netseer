@@ -32,12 +32,14 @@
       <aside id="sidebar" class="sidebar">
         <section>
           <h2>Load a survey</h2>
-          <p class="hint">Drop a capture, or pick a bundled campus sample. No upload required for the preview.</p>
+          <p class="hint">Drop a capture to add it to this list, or pick a bundled campus sample. Remove anything you no longer want.</p>
           <label class="drop" id="dropzone">
-            <input id="file" type="file" accept=".pcap,.pcapng,.cap,.netxml,.csv" />
+            <input id="file" type="file" accept=".pcap,.pcapng,.cap,.netxml,.csv" multiple />
             <span>Drop .pcap / .pcapng / .netxml / .csv</span>
           </label>
           <ul id="sample-list" class="sample-list"></ul>
+          <p id="survey-empty" class="hint hidden">No surveys in the list. Drop a capture, or restore the bundled campus samples.</p>
+          <button id="btn-restore-samples" class="btn ghost restore-samples hidden" type="button">Restore bundled samples</button>
         </section>
         <section>
           <h2>Show</h2>
@@ -64,7 +66,7 @@
         <div id="map" class="map" role="application" aria-label="Network map"></div>
         <div id="empty" class="overlay">
           <h2>No survey loaded</h2>
-          <p>Choose a sample on the left or drop a Wireshark, tcpdump, Kismet, or airodump-ng export.</p>
+          <p>Choose a survey on the left, drop a Wireshark, tcpdump, Kismet, or airodump-ng export, or restore bundled samples if you hid them.</p>
         </div>
         <div id="loading" class="overlay hidden">
           <div class="spinner" aria-hidden="true"></div>
@@ -76,6 +78,12 @@
           <button id="btn-dismiss" class="btn" type="button">Dismiss</button>
         </div>
         <div class="status" id="status">Ready</div>
+        <div class="zoom-bar" id="zoom-bar">
+          <span class="zoom-label">Zoom</span>
+          <input id="zoom-slider" type="range" min="20" max="400" step="1" value="100" disabled aria-label="Map zoom" />
+          <span id="zoom-pct" class="zoom-pct">100%</span>
+          <button id="zoom-fit" class="btn ghost" type="button" disabled>Fit</button>
+        </div>
       </main>
 
       <aside class="inspector" id="inspector">

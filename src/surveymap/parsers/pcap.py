@@ -144,6 +144,21 @@ def _dot11_addrs(dot11: Any) -> tuple[str | None, str | None, str | None]:
     return bssid, sta, addr1
 
 
+def _dot11_address_roles(dot11: Any) -> dict[str, str | None]:
+    """Map 802.11 address fields to TX/TA, RX, DA, and RA. Omit anything not in the frame."""
+    to_ds = bool(int(getattr(dot11, "FCfield", 0)) & 0x1)
+    addr1 = getattr(dot11, "addr1", None)
+    addr2 = getattr(dot11, "addr2", None)
+    addr3 = getattr(dot11, "addr3", None)
+    da = addr3 if to_ds else addr1
+    return {
+        "tx": addr2,
+        "rx": addr1,
+        "da": da,
+        "ra": addr1,
+    }
+
+
 def _iter_vlans(pkt: Any) -> list[int]:
     vlans: list[int] = []
     layer = pkt
@@ -371,6 +386,10 @@ def _handle_packet(builder: GraphBuilder, pkt: Any) -> None:
 
 def _handle_dot11(builder: GraphBuilder, pkt: Any) -> None:
     dot11 = pkt[Dot11]
+    roles = _dot11_address_roles(dot11)
+    for role, mac in roles.items():
+        if mac:
+            builder.observe_mac(mac, wireless=True, mac_roles=(role,))
     bssid, sta, _ = _dot11_addrs(dot11)
     signal, freq = _radiotap_rf(pkt)
     elements = _walk_elements(pkt)

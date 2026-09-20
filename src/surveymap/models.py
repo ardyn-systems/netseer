@@ -28,6 +28,10 @@ class Node:
     label: str
     medium: str = "wired"
     macs: list[str] = field(default_factory=list)
+    mac_tx: list[str] = field(default_factory=list)
+    mac_rx: list[str] = field(default_factory=list)
+    mac_da: list[str] = field(default_factory=list)
+    mac_ra: list[str] = field(default_factory=list)
     ips: list[str] = field(default_factory=list)
     ssids: list[str] = field(default_factory=list)
     channels: list[int] = field(default_factory=list)

@@ -62,7 +62,7 @@ uv run python -m surveymap.generate_samples
 uv run netseer --port 47331
 ```
 
-Open [http://127.0.0.1:47331](http://127.0.0.1:47331). The campus combined sample loads automatically. Drop your own capture onto the left panel, inspect a node for ports/services, then export draw.io or Visio.
+Open [http://127.0.0.1:47331](http://127.0.0.1:47331). The campus combined sample loads automatically. Drop your own capture onto the left panel — it is added to **Load a survey** with a Remove control. Bundled samples can be hidden from the list (files stay on disk) and restored with **Restore bundled samples**. Use the map **Zoom** slider (kept in sync with scroll/pinch). Inspect a node for TX/RX/DA/RA MACs, ports, and services, then export draw.io or Visio.
 
 The public CLI is `netseer`. The Python import path remains `surveymap`. Bundled files live in `src/surveymap/data/`. The OUI table is compiled from IEEE CSVs:
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from xml.sax.saxutils import escape
 
 from surveymap.exporters.layout import layout_positions
+from surveymap.graph import mac_role_lines
 from surveymap.models import SurveyGraph
 from surveymap.services import node_service_caption
 
@@ -29,7 +30,10 @@ def _label(node) -> str:
     parts = [escape(node.label)]
     if node.ips:
         parts.append(escape(node.ips[0]))
-    if node.macs and node.kind in {"ap", "host", "gateway", "server"}:
+    role_macs = mac_role_lines(node, limit=2)
+    if role_macs:
+        parts.extend(escape(line) for line in role_macs)
+    elif node.macs and node.kind in {"ap", "host", "gateway", "server"}:
         parts.append(escape(node.macs[0]))
     if node.vendor:
         parts.append(escape(node.vendor))

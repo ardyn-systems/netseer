@@ -31,6 +31,10 @@ FIELD_ORDER = [
     ("medium", "Medium"),
     ("roles", "Roles (server/client)"),
     ("vendor", "OUI manufacturer"),
+    ("mac_tx", "TX MAC"),
+    ("mac_rx", "RX MAC"),
+    ("mac_da", "DA MAC"),
+    ("mac_ra", "RA MAC"),
     ("macs", "MAC addresses"),
     ("ips", "IP addresses"),
     ("vlans", "VLANs"),
@@ -98,9 +102,15 @@ def device_properties(graph: SurveyGraph, node: Node) -> list[dict[str, str]]:
         raw = dict(node)
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
+    has_mac_roles = any(raw.get(k) for k in ("mac_tx", "mac_rx", "mac_da", "mac_ra"))
     for key, title in FIELD_ORDER:
         seen.add(key)
         value = raw.get(key)
+        if key == "macs" and has_mac_roles:
+            continue
+        if key in {"mac_tx", "mac_rx", "mac_da", "mac_ra"}:
+            rows.append({"name": title, "key": key, "value": _stringify(value) or "not present"})
+            continue
         if key in {"routing", "extra"} and isinstance(value, dict) and value:
             rows.append({"name": title, "key": key, "value": _stringify(value)})
             for nested_key, nested_val in value.items():
