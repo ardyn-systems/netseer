@@ -182,15 +182,14 @@ uv run python -m surveymap.compile_oui /tmp/oui.csv /tmp/mam.csv /tmp/oui36.csv 
 
 ## Next steps on your own Linux computer
 
-This session could **not** create a public GitHub repo named `netseer`: `gh` is not logged in (`gh auth status` → not logged into any GitHub hosts). There is no clone URL to hand you from here.
+Source lives at **https://github.com/ardyn-systems/netseer** (private). Clone it, then follow [[#Install from source]] and [[#Start the preview]].
 
-Do one of:
+```bash
+git clone https://github.com/ardyn-systems/netseer.git
+cd netseer
+```
 
-1. **Copy the tree** — zip or `rsync` the project directory (including `src/`, `web/`, `tests/`, `pyproject.toml`, `README.md`). On the target box, follow [[#Install from source]] and [[#Start the preview]].
-2. **Make your own GitHub repo** — on a machine where you `gh auth login` (or use the GitHub UI), create `netseer`, add the remote, push this source, then `git clone` on Debian/Ubuntu.
-3. **After a clone URL exists** — `git clone <url> && cd netseer` and use Path A or B above.
-
-Stay on a branch that has the current UI (bridge attachments, editable fields, Show all/none, type labels). Then:
+Stay on `main` (bridge attachments, editable fields, Show all/none, type labels). Then:
 
 ```bash
 uv sync --group dev
