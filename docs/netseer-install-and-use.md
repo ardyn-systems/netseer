@@ -2,7 +2,7 @@
 
 **Turn traffic into terrain.**
 
-Walkthrough for installing the NetSeer preview on Debian/Ubuntu and using the browser map. One local Python web app; not a compiled binary yet.
+Walkthrough for cloning NetSeer from GitHub, installing it on Debian/Ubuntu, and using the browser map. One local Python web app; not a compiled binary yet.
 
 ## What it is
 
@@ -17,25 +17,78 @@ It is **not** an installer `.deb`, AppImage, or standalone binary. You run it fr
 
 Bundled campus samples ship in `src/surveymap/data/` so you can click around without uploading anything.
 
+**Source:** [https://github.com/ardyn-systems/netseer](https://github.com/ardyn-systems/netseer) (private). Branch: `main`.
+
 ## Requirements
 
-- **OS:** Debian-family Linux (Debian, Ubuntu, Mint, …). Other distros work if you have Python 3.12+.
+- **OS:** Debian-family Linux (Debian, Ubuntu, Mint, …). Other distros work if you have Python 3.12+ and git.
 - **Python:** **3.12 or newer** (`requires-python = ">=3.12"`). Ubuntu 24.04 is fine. Debian 12’s default `python3` is 3.11 — use 3.12 (or let `uv` fetch it).
-- **Packages the README actually installs:**
+- **GitHub access** to `ardyn-systems/netseer` (the repo is private). You need to be logged in as someone who can read it.
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3 python3-venv python3-pip
+sudo apt-get install -y git python3 python3-venv python3-pip curl
 ```
 
-- **Optional but useful:** `curl` (uv installer, IEEE OUI refresh), `git` (if you clone).
 - **No database, no login, no extra daemons.** Scapy reads pcap files from disk; this preview does not live-sniff.
 
 Python deps (installed into the venv, not apt): FastAPI, uvicorn, python-multipart, scapy, reportlab.
 
-## Install from source
+## 1. Clone the repo
 
-Get the project tree onto the box first (see [[#Next steps on your own Linux computer]]). Then pick **uv** or **venv + pip**.
+On the Linux box that will run NetSeer:
+
+### HTTPS with GitHub CLI (preferred)
+
+```bash
+# one-time on that machine
+gh auth login --hostname github.com --git-protocol https --web
+gh auth status   # should show your account with repo scope
+
+gh repo clone ardyn-systems/netseer
+cd netseer
+git checkout main
+git pull
+```
+
+`gh repo clone` uses the token from `gh auth login`, so a private clone works without embedding a password in the URL.
+
+### HTTPS with git only
+
+GitHub will not accept your account password. Use a [personal access token](https://github.com/settings/tokens) with `repo` scope as the password, or cache credentials after `gh auth login` (`gh auth setup-git`).
+
+```bash
+git clone https://github.com/ardyn-systems/netseer.git
+cd netseer
+git checkout main
+git pull
+```
+
+When prompted: username = your GitHub username, password = the PAT (not your GitHub password).
+
+### SSH
+
+If this machine already has an SSH key added to GitHub:
+
+```bash
+git clone git@github.com:ardyn-systems/netseer.git
+cd netseer
+git checkout main
+git pull
+```
+
+You should see `README.md`, `pyproject.toml`, `src/`, `web/`, and `docs/`. Stay on **`main`**.
+
+To refresh later:
+
+```bash
+cd netseer
+git pull origin main
+```
+
+## 2. Install Python deps
+
+Pick **uv** or **venv + pip**. Run these from the cloned `netseer` directory.
 
 ### Path A — uv (preferred)
 
@@ -45,7 +98,7 @@ Get the project tree onto the box first (see [[#Next steps on your own Linux com
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # open a new shell, or: source $HOME/.local/bin/env
 
-cd /path/to/netseer
+cd netseer
 uv python install 3.12
 uv sync --group dev
 uv run python -m surveymap.generate_samples
@@ -56,7 +109,7 @@ uv run python -m surveymap.generate_samples
 ### Path B — python3 venv and pip
 
 ```bash
-cd /path/to/netseer
+cd netseer
 python3 -m venv .venv
 source .venv/bin/activate
 python -c "import sys; assert sys.version_info >= (3, 12), sys.version"
@@ -69,17 +122,17 @@ If `python3` is 3.11, install 3.12 and call it explicitly (`python3.12 -m venv .
 
 `generate_samples` rewrites the bundled `.pcap` / `.pcapng` / Kismet / airodump files under `src/surveymap/data/`. Skip it if those files are already there.
 
-## Start the preview
+## 3. Start the preview
 
 Default bind is **all interfaces**, port **47331**.
 
 ```bash
 # uv
-uv run netseer --host 0.0.0.0 --port 47331
+uv run netseer --host 127.0.0.1 --port 47331
 
 # venv
 source .venv/bin/activate
-netseer --host 0.0.0.0 --port 47331
+netseer --host 127.0.0.1 --port 47331
 ```
 
 Open [http://127.0.0.1:47331](http://127.0.0.1:47331).
@@ -163,6 +216,8 @@ Need a map loaded (buttons disable on empty).
 
 Device-window downloads are per node. Map-name, extra, notes, and field edits are included in the graph posted to the server.
 
+Edits live in **this browser’s** `localStorage` (`netseer.deviceMeta.v1`, `netseer.hiddenSamples`). They are not written back into the pcap.
+
 ## Optional: tests and OUI table
 
 ```bash
@@ -180,32 +235,17 @@ curl -L -o /tmp/cid.csv https://standards-oui.ieee.org/cid/cid.csv
 uv run python -m surveymap.compile_oui /tmp/oui.csv /tmp/mam.csv /tmp/oui36.csv /tmp/cid.csv
 ```
 
-## Next steps on your own Linux computer
-
-Source lives at **https://github.com/ardyn-systems/netseer** (private). Clone it, then follow [[#Install from source]] and [[#Start the preview]].
-
-```bash
-git clone https://github.com/ardyn-systems/netseer.git
-cd netseer
-```
-
-Stay on `main` (bridge attachments, editable fields, Show all/none, type labels). Then:
-
-```bash
-uv sync --group dev
-uv run netseer --host 127.0.0.1 --port 47331
-```
-
-Open http://127.0.0.1:47331, click **Campus survey (combined)**, try **Show none** / **Show all**, open a Router, edit a field, export draw.io.
-
-Edits live in **this browser’s** `localStorage` (`netseer.deviceMeta.v1`, `netseer.hiddenSamples`). They are not written back into the pcap.
-
 ## Quick reference
 
 | Item | Value |
 | --- | --- |
 | Product | NetSeer |
 | Motto | Turn traffic into terrain. |
+| Repo | https://github.com/ardyn-systems/netseer (private) |
+| Branch | `main` |
+| Clone (gh) | `gh repo clone ardyn-systems/netseer` |
+| Clone (HTTPS) | `git clone https://github.com/ardyn-systems/netseer.git` |
+| Clone (SSH) | `git clone git@github.com:ardyn-systems/netseer.git` |
 | CLI | `netseer` |
 | Python import | `surveymap` |
 | Default URL | http://127.0.0.1:47331 |
