@@ -311,8 +311,19 @@ section { margin-bottom: 1.25rem; }
 .map-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
 .map-item {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: 0.3rem;
+}
+.map-tools { display: flex; gap: 0.25rem; }
+.map-tools .btn { padding: 0.2rem 0.45rem; font-size: 0.72rem; flex: 1; }
+.merge-label { margin-top: 0.45rem; display: grid; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+.merge-label select {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  padding: 0.35rem 0.45rem;
 }
 .map-item button.map-load {
   text-align: left;

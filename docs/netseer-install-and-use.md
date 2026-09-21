@@ -115,17 +115,21 @@ The CLI name is `netseer`. `surveymap` is also registered as an alias. Leave the
 
 ## How to use
 
+A function-by-function guide (maps, Unwanted dumps, AP copy, field Copy, exports) is [[netseer-how-to]] / [docs/netseer-how-to.md](netseer-how-to.md).
+
 Campus survey (combined) loads on first visit into its own **map**. Empty, loading, and parse-error overlays cover the other states. Maps, device edits, and the clipboard persist in this browser (`localStorage`).
 
 ### Maps (blank, Unwanted, cut / copy / paste)
 
-Left **Maps** list holds every map in the session:
+Left **Maps** list holds every map in this session:
 
-- **Unwanted** — holding / quarantine map. Devices you do not want on the working drawing go here, with fields and notes.
-- Survey maps — created when you load a sample or upload.
-- **New blank map** (header or Maps panel) — empty canvas. No campus sample required. Paste onto it, or leave it empty.
+- **Unwanted** — holding / quarantine map. It cannot be deleted. **Empty** writes devices to `Unwanted/` in the project (`Unwanted-office-lan.json`, …) then clears the map. Drop that JSON onto **Load a survey** to reload it.
+- Survey maps — created when you load a sample or upload. **Rename** / **Delete** on the row.
+- **New blank map** — empty canvas. Rename or delete it like any user map.
 
-Switch maps by clicking a row. The active map is what you edit and export. Each map keeps its own devices when you switch.
+**Merge this map into** combines the active map into another (nodes, edges, notes). Unwanted cannot be a merge source or target.
+
+Switch maps by clicking a row. Each map keeps its own devices when you switch.
 
 **Select** a device (click; Shift-click adds; Shift-drag boxes). Then:
 
@@ -136,11 +140,11 @@ Switch maps by clicking a row. The active map is what you edit and export. Each 
 | Paste | Switch to the destination map, then Paste or Ctrl+V / Cmd+V |
 | Move | Cut, switch maps, paste — or **Move to Unwanted** / **Move to** in the device window |
 | Delete | Delete / Backspace, Delete button, right-click, or **Delete from map** in the device window |
-| Undo | Undo or Ctrl+Z / Cmd+Z (last cut, paste, move, or delete) |
+| Undo | Undo or Ctrl+Z / Cmd+Z (last cut, paste, move, delete, merge, or empty) |
 
 Edges travel with a selection only when **both** endpoints are in that selection. Device details, edits, and notes stay with the device.
 
-Copying an **Access point** also copies its associated **wireless clients** and the wireless edges between them (the whole AP network). Copying a **Wireless client** copies only that station. Cut and **Move to Unwanted** / **Move to** another map do the same when the selection is an AP.
+Copying an **Access point** takes associated **wireless clients**, the wireless edges, and **other APs on WDS / STP / attachment (bridge) links** to that AP (and those APs’ clients). Copying a **Wireless client** copies only that station. Cut and **Move to Unwanted** / **Move to** do the same when the selection is an AP.
 
 ### Load and remove surveys
 
@@ -190,7 +194,7 @@ Click a node. The dialog lists extracted fields.
 - **Capture** vs **Edited** on each row. Type to override; **Reset** goes back to what the parser found.
 - Editable: type/kind/medium, TX / RX / DA / RA MACs, other MACs, IPs, VLANs, SSIDs, channel, frequency, encryption, OUI manufacturer, ports/services, GPS, routing, extra JSON, and the rest of the property list. `id` stays read-only.
 - **Your notes** at the bottom.
-- Copy one field, **Copy all**, or download **PDF / CSV / XML / Plain text**. Notes and edits go with those exports when present.
+- Per-row **Copy** copies **only the text-box value** (not the field name or Capture/Edited badge). **Copy all** is still a structured dump. Download **PDF / CSV / XML / Plain text**. Notes and edits go with those exports when present.
 - **Cut**, **Copy**, **Move to Unwanted**, **Delete from map**, and **Move to** another map sit under the export buttons.
 
 The right **Details** inspector shows the live overlay (including `User-edited: …`). Click a **bridge** edge to see kind `bridge`, mechanism (STP / WDS / attachment), and via device.

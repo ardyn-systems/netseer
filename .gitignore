@@ -8,4 +8,5 @@ dist/
 build/
 .uv/
 agent-tools/
-.DS_Store
+Unwanted/*.json
+!Unwanted/README.md

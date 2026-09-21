@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 PCAP_MAGICS = {
     b"\xd4\xc3\xb2\xa1",
     b"\xa1\xb2\xc3\xd4",
@@ -28,6 +30,16 @@ def sniff_format(data: bytes, filename: str = "") -> str:
         return "pcapng"
     text_prefix = head[:400].decode("utf-8", errors="replace")
     lowered = text_prefix.lower()
+    stripped = data.lstrip()
+    if stripped[:1] in (b"{", b"[") or name.endswith(".json"):
+        try:
+            obj = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            obj = None
+        if isinstance(obj, dict) and (
+            obj.get("netseer") or ("nodes" in obj and "links" in obj)
+        ):
+            return "netseer-json"
     if "<detection-run" in lowered or "<wireless-network" in lowered or "kismet-3." in lowered:
         return "kismet-netxml"
     if "bssid" in lowered and ("station mac" in lowered or "probed essids" in lowered or "# iv" in lowered):
@@ -44,5 +56,5 @@ def sniff_format(data: bytes, filename: str = "") -> str:
         return "airodump-csv" if "station mac" in lowered else "kismet-csv"
     raise UnsupportedSurveyError(
         "Unsupported survey format. Use Wireshark/tshark .pcap/.pcapng, tcpdump .pcap, "
-        "Kismet .pcap/.netxml/.csv, or airodump-ng CSV/.cap."
+        "Kismet .pcap/.netxml/.csv, airodump-ng CSV/.cap, or a NetSeer Unwanted/*.json dump."
     )

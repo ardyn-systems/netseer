@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -25,6 +27,8 @@ from surveymap.samples import SAMPLES, files_for_sample
 from surveymap.serialize import graph_from_dict
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+ROOT_DIR = Path(__file__).resolve().parents[2]
+UNWANTED_DIR = ROOT_DIR / "Unwanted"
 
 app = FastAPI(title=PRODUCT_NAME, version="0.1.0", description=MOTTO)
 
@@ -170,6 +174,58 @@ def export_report_pdf(body: dict):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
+
+
+def _safe_unwanted_stem(capture: str) -> str:
+    raw = Path(str(capture or "unknown")).name
+    stem = Path(raw).stem if raw else "unknown"
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip(".-") or "unknown"
+    return cleaned[:60]
+
+
+def _unique_unwanted_path(stem: str) -> Path:
+    UNWANTED_DIR.mkdir(parents=True, exist_ok=True)
+    dest = UNWANTED_DIR / f"Unwanted-{stem}.json"
+    i = 2
+    while dest.exists():
+        dest = UNWANTED_DIR / f"Unwanted-{stem}-{i}.json"
+        i += 1
+    return dest
+
+
+@app.post("/api/unwanted/dump")
+def dump_unwanted(body: dict):
+    groups = body.get("groups")
+    if not isinstance(groups, list) or not groups:
+        raise HTTPException(status_code=400, detail="Empty Unwanted dump needs at least one device group.")
+    written: list[str] = []
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        nodes = group.get("nodes") or []
+        if not nodes:
+            continue
+        capture = group.get("capture") or "unknown"
+        stem = _safe_unwanted_stem(capture)
+        dest = _unique_unwanted_path(stem)
+        payload = {
+            "netseer": "unwanted-v1",
+            "original_capture": capture,
+            "title": f"Unwanted {stem}",
+            "nodes": nodes,
+            "links": group.get("links") or [],
+            "meta": {
+                "sources": [capture] if capture else ["unknown"],
+                "node_count": len(nodes),
+                "link_count": len(group.get("links") or []),
+            },
+            "device_meta": group.get("device_meta") or {},
+        }
+        dest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        written.append(dest.name)
+    if not written:
+        raise HTTPException(status_code=400, detail="No devices to write.")
+    return {"ok": True, "directory": "Unwanted", "files": written}
 
 
 @app.get("/")

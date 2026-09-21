@@ -579,9 +579,11 @@ function upsertMap(partial) {
   const existing = getMap(partial.id);
   if (existing) {
     const edited = existing.edited;
+    const captures = existing.captures;
     Object.assign(existing, partial);
     if (partial.graph) existing.graph = cloneData(partial.graph);
     if (!("edited" in partial)) existing.edited = edited;
+    if (!("captures" in partial)) existing.captures = captures;
     return existing;
   }
   const map = {
@@ -589,6 +591,7 @@ function upsertMap(partial) {
     name: partial.name || "Map",
     kind: partial.kind || "blank",
     sourceId: partial.sourceId || null,
+    captures: Array.isArray(partial.captures) ? [...partial.captures] : [],
     edited: Boolean(partial.edited),
     graph: cloneData(partial.graph || emptyGraph(partial.name)),
   };
@@ -631,8 +634,218 @@ function renderMapList() {
     const kindLabel = map.kind === "unwanted" ? "Holding map" : map.kind === "blank" ? "Blank map" : "Survey map";
     btn.innerHTML = `${escapeHtml(map.name)}<small>${escapeHtml(kindLabel)} · ${n} devices</small>`;
     btn.addEventListener("click", () => showMap(map.id));
-    row.append(btn);
+    const tools = document.createElement("div");
+    tools.className = "map-tools";
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "btn ghost map-tool";
+    rename.textContent = "Rename";
+    rename.setAttribute("aria-label", `Rename ${map.name}`);
+    rename.addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      renameMap(map.id);
+    });
+    tools.append(rename);
+    if (map.kind === "unwanted") {
+      const emptyBtn = document.createElement("button");
+      emptyBtn.type = "button";
+      emptyBtn.className = "btn ghost map-tool";
+      emptyBtn.textContent = "Empty";
+      emptyBtn.setAttribute("aria-label", "Empty Unwanted");
+      emptyBtn.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        emptyUnwanted();
+      });
+      tools.append(emptyBtn);
+    } else {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "btn ghost map-tool danger";
+      del.textContent = "Delete";
+      del.setAttribute("aria-label", `Delete ${map.name}`);
+      del.addEventListener("click", (evt) => {
+        evt.stopPropagation();
+        deleteMap(map.id);
+      });
+      tools.append(del);
+    }
+    row.append(btn, tools);
     list.appendChild(row);
+  }
+  fillMergeSelect();
+}
+
+function fillMergeSelect() {
+  const sel = el("merge-into");
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Merge into…</option>';
+  const active = getMap(state.activeMapId);
+  const mergeAllowed = active && active.kind !== "unwanted";
+  for (const map of state.maps) {
+    if (map.kind === "unwanted") continue;
+    if (map.id === state.activeMapId) continue;
+    const opt = document.createElement("option");
+    opt.value = map.id;
+    opt.textContent = map.name;
+    sel.appendChild(opt);
+  }
+  if (current && [...sel.options].some((o) => o.value === current)) sel.value = current;
+  sel.disabled = !mergeAllowed || sel.options.length < 2;
+  const mergeBtn = el("btn-merge");
+  if (mergeBtn) mergeBtn.disabled = sel.disabled || !sel.value;
+}
+
+function renameMap(mapId) {
+  const map = getMap(mapId);
+  if (!map) return;
+  const next = window.prompt("Map name", map.name);
+  if (next == null) return;
+  const name = next.trim();
+  if (!name) {
+    setEditToast("Map name cannot be empty.");
+    return;
+  }
+  map.name = name;
+  if (map.id === state.activeMapId) {
+    state.title = name;
+    if (state.graph) state.graph.title = name;
+  }
+  persistMaps();
+  renderMapList();
+  fillMoveToSelect();
+  if (map.id === state.activeMapId) setStatus(`${name} · ${mapNodeCount(map)} nodes · ${(map.graph?.links || []).length} links`);
+  setEditToast(`Renamed map to ${name}.`);
+}
+
+function deleteMap(mapId) {
+  const map = getMap(mapId);
+  if (!map) return;
+  if (map.kind === "unwanted" || map.id === UNWANTED_ID) {
+    setEditToast("Unwanted is the holding map and cannot be deleted. Empty it instead.");
+    return;
+  }
+  if (!window.confirm(`Delete map “${map.name}”? Devices on it are not written to Unwanted/.`)) return;
+  snapshotUndo("delete-map");
+  state.maps = state.maps.filter((m) => m.id !== mapId);
+  if (state.activeMapId === mapId) {
+    const next = state.maps.find((m) => m.kind !== "unwanted") || getMap(UNWANTED_ID);
+    if (next) showMap(next.id);
+    else {
+      ensureUnwanted();
+      showMap(UNWANTED_ID);
+    }
+  } else {
+    persistMaps();
+    renderMapList();
+    fillMoveToSelect();
+  }
+  setEditToast(`Deleted ${map.name}.`);
+}
+
+function mergeMaps(sourceId, destId) {
+  const source = getMap(sourceId);
+  const dest = getMap(destId);
+  if (!source || !dest) return;
+  if (source.kind === "unwanted" || dest.kind === "unwanted" || source.id === UNWANTED_ID || dest.id === UNWANTED_ID) {
+    setEditToast("Unwanted cannot be a merge source or target.");
+    return;
+  }
+  if (source.id === dest.id) {
+    setEditToast("Pick a different map to merge into.");
+    return;
+  }
+  snapshotUndo("merge");
+  if (state.activeMapId === source.id && state.graph) source.graph = cloneData(state.graph);
+  if (state.activeMapId === dest.id && state.graph) dest.graph = cloneData(state.graph);
+  dest.graph = dest.graph || emptyGraph(dest.name);
+  source.graph = source.graph || emptyGraph(source.name);
+  const used = new Set((dest.graph.nodes || []).map((n) => n.id));
+  const idMap = {};
+  dest.graph.nodes = dest.graph.nodes || [];
+  dest.graph.links = dest.graph.links || [];
+  for (const node of source.graph.nodes || []) {
+    const nextId = uniqueId(node.id, used);
+    idMap[node.id] = nextId;
+    used.add(nextId);
+    const copy = stampOriginCapture(cloneData(node), source);
+    copy.id = nextId;
+    dest.graph.nodes.push(copy);
+    transferMeta(source.id, dest.id, node.id, nextId);
+  }
+  const usedLinks = new Set((dest.graph.links || []).map((l) => l.id));
+  for (const link of source.graph.links || []) {
+    const src = idMap[link.source];
+    const tgt = idMap[link.target];
+    if (!src || !tgt) continue;
+    const copy = cloneData(link);
+    copy.source = src;
+    copy.target = tgt;
+    copy.id = uniqueId(link.id || `${src}-${tgt}`, usedLinks);
+    usedLinks.add(copy.id);
+    dest.graph.links.push(copy);
+  }
+  dest.edited = true;
+  persistMaps();
+  showMap(dest.id);
+  setEditToast(`Merged ${source.name} into ${dest.name}.`);
+}
+
+function mergeActiveIntoSelected() {
+  const destId = el("merge-into")?.value;
+  if (!destId) {
+    setEditToast("Choose a map to merge into.");
+    return;
+  }
+  mergeMaps(state.activeMapId, destId);
+}
+
+async function emptyUnwanted() {
+  ensureUnwanted();
+  const map = getMap(UNWANTED_ID);
+  if (!map) return;
+  if (state.activeMapId === UNWANTED_ID && state.graph) map.graph = cloneData(state.graph);
+  const graph = map.graph || emptyGraph("Unwanted");
+  if (!(graph.nodes || []).length) {
+    setEditToast("Unwanted is already empty.");
+    return;
+  }
+  if (!window.confirm("Empty Unwanted? Devices are written to Unwanted/ in the NetSeer project, then cleared from this map.")) return;
+  snapshotUndo("empty-unwanted");
+  const groups = {};
+  for (const node of graph.nodes || []) {
+    const key = originCaptureForNode(node, map);
+    if (!groups[key]) groups[key] = { capture: key, nodes: [], links: [], device_meta: {} };
+    groups[key].nodes.push(stampOriginCapture(state.activeMapId === UNWANTED_ID ? overlayNode(node) : cloneData(node), map));
+    groups[key].device_meta[node.id] = cloneData(allDeviceMeta()[`${UNWANTED_ID}::${node.id}`] || {});
+  }
+  for (const group of Object.values(groups)) {
+    const ids = new Set(group.nodes.map((n) => n.id));
+    group.links = (graph.links || []).filter((l) => ids.has(l.source) && ids.has(l.target));
+  }
+  try {
+    const payload = await parseResponse(
+      await fetch("/api/unwanted/dump", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groups: Object.values(groups) }),
+      })
+    );
+    const ids = (graph.nodes || []).map((n) => n.id);
+    removeNodesFromGraph(graph, ids);
+    for (const id of ids) dropMeta(UNWANTED_ID, id);
+    map.graph = graph;
+    map.edited = true;
+    if (state.activeMapId === UNWANTED_ID) {
+      paintGraph(cloneData(graph), map.name, map.id);
+    }
+    persistMaps();
+    renderMapList();
+    fillMoveToSelect();
+    const names = (payload.files || []).join(", ");
+    setEditToast(`Wrote ${names || "Unwanted dump"} and emptied Unwanted.`);
+  } catch (err) {
+    fail(err);
   }
 }
 
@@ -772,16 +985,36 @@ function wirelessAssocPeer(link, apId) {
   return null;
 }
 
+function bridgeApPeer(link, apId, graph) {
+  if (!link || link.kind !== "bridge") return null;
+  let other = null;
+  if (link.source === apId) other = link.target;
+  else if (link.target === apId) other = link.source;
+  else return null;
+  return nodeLooksLikeAp(nodeById(other, graph)) ? other : null;
+}
+
 function expandSelectionForApNetwork(ids) {
   const graph = state.graph;
   if (!graph || !ids?.length) return [...(ids || [])];
   const out = new Set(ids);
-  for (const id of ids) {
-    if (!nodeLooksLikeAp(nodeById(id, graph))) continue;
-    for (const link of graph.links || []) {
-      const peer = wirelessAssocPeer(link, id);
-      if (!peer) continue;
-      if (nodeLooksLikeWirelessClient(nodeById(peer, graph))) out.add(peer);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const id of [...out]) {
+      if (!nodeLooksLikeAp(nodeById(id, graph))) continue;
+      for (const link of graph.links || []) {
+        const client = wirelessAssocPeer(link, id);
+        if (client && nodeLooksLikeWirelessClient(nodeById(client, graph)) && !out.has(client)) {
+          out.add(client);
+          changed = true;
+        }
+        const ap = bridgeApPeer(link, id, graph);
+        if (ap && !out.has(ap)) {
+          out.add(ap);
+          changed = true;
+        }
+      }
     }
   }
   return [...out];
@@ -790,15 +1023,47 @@ function expandSelectionForApNetwork(ids) {
 function describeDevicePack(originalIds, expandedIds, verb) {
   const n = expandedIds.length;
   const orig = new Set(originalIds);
-  const extra = expandedIds.filter((id) => !orig.has(id)).length;
+  const extras = expandedIds.filter((id) => !orig.has(id));
   const base = `${verb} ${n} device${n === 1 ? "" : "s"}`;
-  if (!extra) return base;
-  return `${base} (AP and ${extra} associated client${extra === 1 ? "" : "s"})`;
+  if (!extras.length) return base;
+  const aps = extras.filter((id) => nodeLooksLikeAp(nodeById(id))).length;
+  const clients = extras.length - aps;
+  const bits = [];
+  if (clients) bits.push(`${clients} associated client${clients === 1 ? "" : "s"}`);
+  if (aps) bits.push(`${aps} bridged AP${aps === 1 ? "" : "s"}`);
+  return `${base} (AP and ${bits.join(" and ")})`;
+}
+
+function mapCaptures(map) {
+  if (!map) return [];
+  if (Array.isArray(map.captures) && map.captures.length) return map.captures;
+  return map.graph?.meta?.sources || [];
+}
+
+function originCaptureForNode(node, map) {
+  const extra = (node && node.extra) || {};
+  if (extra.origin_capture) return extra.origin_capture;
+  const captures = mapCaptures(map);
+  if (captures.length === 1) return captures[0];
+  const sourceId = map?.sourceId || "";
+  if (String(sourceId).startsWith("upload:")) return sourceId.slice(7);
+  if (sourceId) return String(sourceId).replace(/^map:/, "");
+  if (captures[0]) return captures[0];
+  return "unknown";
+}
+
+function stampOriginCapture(node, map) {
+  const copy = cloneData(node);
+  copy.extra = { ...(copy.extra && typeof copy.extra === "object" ? copy.extra : {}), origin_capture: originCaptureForNode(copy, map) };
+  return copy;
 }
 
 function packSelection(ids, mode, originalIds) {
   const idSet = new Set(ids);
-  const nodes = (state.graph.nodes || []).filter((n) => idSet.has(n.id)).map((n) => overlayNode(n));
+  const map = getMap(state.activeMapId);
+  const nodes = (state.graph.nodes || [])
+    .filter((n) => idSet.has(n.id))
+    .map((n) => stampOriginCapture(overlayNode(n), map));
   const links = (state.graph.links || []).filter((l) => idSet.has(l.source) && idSet.has(l.target));
   const meta = {};
   for (const id of ids) meta[id] = cloneData(getDeviceMeta(id));
@@ -886,7 +1151,7 @@ function pasteClipboard() {
   const n = clip.nodes.length;
   const extra = clip.bundledClients || 0;
   const msg = extra
-    ? `Pasted ${n} devices onto ${destName} (AP and ${extra} associated client${extra === 1 ? "" : "s"}).`
+    ? `Pasted ${n} devices onto ${destName} (AP network with clients and/or bridged APs).`
     : `Pasted ${n} device${n === 1 ? "" : "s"} onto ${destName}.`;
   setEditToast(msg);
 }
@@ -988,13 +1253,32 @@ function isTypingTarget(target) {
 
 function applyGraph(graph, title, surveyId) {
   const id = surveyId || state.activeMapId || `map:${Date.now()}`;
+  const captures = graph?.meta?.sources || [];
   upsertMap({
     id: id.startsWith("map:") || id === UNWANTED_ID ? id : `map:${id}`,
     name: title || "NetSeer map",
     kind: id === UNWANTED_ID || surveyId === UNWANTED_ID ? "unwanted" : "survey",
     sourceId: surveyId || null,
+    captures,
     graph,
   });
+  if (graph?.device_meta && typeof graph.device_meta === "object") {
+    const mapId = id.startsWith("map:") || id === UNWANTED_ID ? id : `map:${id}`;
+    const all = allDeviceMeta();
+    for (const [nodeId, meta] of Object.entries(graph.device_meta)) {
+      all[`${mapId}::${nodeId}`] = cloneData(meta);
+    }
+    localStorage.setItem(META_KEY, JSON.stringify(all));
+  }
+  const dumped = graph?.meta?.device_meta;
+  if (dumped && typeof dumped === "object") {
+    const mapId = id.startsWith("map:") || id === UNWANTED_ID ? id : `map:${id}`;
+    const all = allDeviceMeta();
+    for (const [nodeId, meta] of Object.entries(dumped)) {
+      all[`${mapId}::${nodeId}`] = cloneData(meta);
+    }
+    localStorage.setItem(META_KEY, JSON.stringify(all));
+  }
   showMap(id.startsWith("map:") || id === UNWANTED_ID ? id : `map:${id}`);
 }
 
@@ -1365,7 +1649,10 @@ function renderDeviceFields(rows, node) {
     copy.type = "button";
     copy.className = "btn ghost copy-one";
     copy.textContent = "Copy";
-    copy.addEventListener("click", () => copyText(`${row.name}: ${control.value || control.textContent || "—"}`));
+    copy.addEventListener("click", () => {
+      const value = control.tagName === "INPUT" || control.tagName === "TEXTAREA" ? control.value : control.textContent || "";
+      copyText(value);
+    });
     wrap.appendChild(copy);
     reset.addEventListener("click", () => {
       if (readonly) return;
@@ -1535,6 +1822,11 @@ async function init() {
   const newMap = () => createBlankMap();
   el("btn-new-map")?.addEventListener("click", newMap);
   el("btn-blank-map")?.addEventListener("click", newMap);
+  el("btn-merge")?.addEventListener("click", mergeActiveIntoSelected);
+  el("merge-into")?.addEventListener("change", () => {
+    const btn = el("btn-merge");
+    if (btn) btn.disabled = !el("merge-into")?.value;
+  });
   el("btn-cut")?.addEventListener("click", cutSelected);
   el("btn-copy-sel")?.addEventListener("click", copySelected);
   el("btn-paste")?.addEventListener("click", pasteClipboard);

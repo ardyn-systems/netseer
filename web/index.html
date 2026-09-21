@@ -33,18 +33,22 @@
       <aside id="sidebar" class="sidebar">
         <section>
           <h2>Maps</h2>
-          <p class="hint">Several maps in this session. Cut or copy devices, switch maps, then paste. Unwanted is a holding map.</p>
+          <p class="hint">Several maps in this session. Cut or copy devices, switch maps, then paste. Rename or delete maps you added. Unwanted is the holding map — empty it to write files under Unwanted/.</p>
           <ul id="map-list" class="map-list"></ul>
           <div class="map-actions">
             <button id="btn-blank-map" class="btn ghost" type="button">New blank map</button>
+            <label class="field-label merge-label">Merge this map into
+              <select id="merge-into" aria-label="Merge into another map"></select>
+            </label>
+            <button id="btn-merge" class="btn ghost" type="button" disabled>Merge</button>
           </div>
         </section>
         <section>
           <h2>Load a survey</h2>
           <p class="hint">Drop a capture to add it to this list, or pick a bundled campus sample. Remove anything you no longer want.</p>
           <label class="drop" id="dropzone">
-            <input id="file" type="file" accept=".pcap,.pcapng,.cap,.netxml,.csv" multiple />
-            <span>Drop .pcap / .pcapng / .netxml / .csv</span>
+            <input id="file" type="file" accept=".pcap,.pcapng,.cap,.netxml,.csv,.json" multiple />
+            <span>Drop .pcap / .pcapng / .netxml / .csv / Unwanted JSON</span>
           </label>
           <ul id="sample-list" class="sample-list"></ul>
           <p id="survey-empty" class="hint hidden">No surveys in the list. Drop a capture, or restore the bundled campus samples.</p>
@@ -171,6 +175,6 @@
       <button type="button" data-ctx="unwanted">Move to Unwanted</button>
       <button type="button" data-ctx="delete">Delete</button>
     </div>
-    <script src="/static/app.js?v=maps5"></script>
+    <script src="/static/app.js?v=maps7"></script>
   </body>
 </html>
