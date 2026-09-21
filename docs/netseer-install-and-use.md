@@ -140,6 +140,8 @@ Switch maps by clicking a row. The active map is what you edit and export. Each 
 
 Edges travel with a selection only when **both** endpoints are in that selection. Device details, edits, and notes stay with the device.
 
+Copying an **Access point** also copies its associated **wireless clients** and the wireless edges between them (the whole AP network). Copying a **Wireless client** copies only that station. Cut and **Move to Unwanted** / **Move to** another map do the same when the selection is an AP.
+
 ### Load and remove surveys
 
 Left panel, **Load a survey**:

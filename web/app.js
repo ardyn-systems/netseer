@@ -740,13 +740,71 @@ function uniqueId(base, used) {
   return next;
 }
 
-function packSelection(ids, mode) {
+function nodeById(id, graph = state.graph) {
+  return (graph?.nodes || []).find((n) => n.id === id);
+}
+
+function nodeLooksLikeAp(node) {
+  if (!node) return false;
+  const n = overlayNode(node);
+  const roles = n.roles || [];
+  if (n.kind === "ap" || roles.includes("ap")) return true;
+  const inferred = String(n.inferred_type || n.label || "").toLowerCase();
+  return inferred === "access point";
+}
+
+function nodeLooksLikeWirelessClient(node) {
+  if (!node || nodeLooksLikeAp(node)) return false;
+  const n = overlayNode(node);
+  const roles = n.roles || [];
+  if (roles.includes("station")) return true;
+  const inferred = String(n.inferred_type || n.label || "").toLowerCase();
+  if (inferred === "wireless client") return true;
+  return n.medium === "wireless" && !["vlan", "subnet"].includes(n.kind);
+}
+
+function wirelessAssocPeer(link, apId) {
+  if (!link || link.kind !== "wireless") return null;
+  const extra = link.extra || {};
+  if (extra.associated === false) return null;
+  if (link.source === apId) return link.target;
+  if (link.target === apId) return link.source;
+  return null;
+}
+
+function expandSelectionForApNetwork(ids) {
+  const graph = state.graph;
+  if (!graph || !ids?.length) return [...(ids || [])];
+  const out = new Set(ids);
+  for (const id of ids) {
+    if (!nodeLooksLikeAp(nodeById(id, graph))) continue;
+    for (const link of graph.links || []) {
+      const peer = wirelessAssocPeer(link, id);
+      if (!peer) continue;
+      if (nodeLooksLikeWirelessClient(nodeById(peer, graph))) out.add(peer);
+    }
+  }
+  return [...out];
+}
+
+function describeDevicePack(originalIds, expandedIds, verb) {
+  const n = expandedIds.length;
+  const orig = new Set(originalIds);
+  const extra = expandedIds.filter((id) => !orig.has(id)).length;
+  const base = `${verb} ${n} device${n === 1 ? "" : "s"}`;
+  if (!extra) return base;
+  return `${base} (AP and ${extra} associated client${extra === 1 ? "" : "s"})`;
+}
+
+function packSelection(ids, mode, originalIds) {
   const idSet = new Set(ids);
   const nodes = (state.graph.nodes || []).filter((n) => idSet.has(n.id)).map((n) => overlayNode(n));
   const links = (state.graph.links || []).filter((l) => idSet.has(l.source) && idSet.has(l.target));
   const meta = {};
   for (const id of ids) meta[id] = cloneData(getDeviceMeta(id));
-  return { mode, fromMap: state.activeMapId, nodes, links, meta };
+  const orig = new Set(originalIds || ids);
+  const extra = ids.filter((id) => !orig.has(id)).length;
+  return { mode, fromMap: state.activeMapId, nodes, links, meta, bundledClients: extra };
 }
 
 function removeNodesFromGraph(graph, ids) {
@@ -761,9 +819,10 @@ function copySelected() {
     setEditToast("Select a device first.");
     return;
   }
-  state.clipboard = packSelection(ids, "copy");
+  const expanded = expandSelectionForApNetwork(ids);
+  state.clipboard = packSelection(expanded, "copy", ids);
   persistMaps();
-  setEditToast(`Copied ${ids.length} device${ids.length === 1 ? "" : "s"}. Switch maps, then Paste.`);
+  setEditToast(`${describeDevicePack(ids, expanded, "Copied")}. Switch maps, then Paste.`);
 }
 
 function cutSelected() {
@@ -772,15 +831,16 @@ function cutSelected() {
     setEditToast("Select a device first.");
     return;
   }
+  const expanded = expandSelectionForApNetwork(ids);
   snapshotUndo("cut");
-  state.clipboard = packSelection(ids, "cut");
-  removeNodesFromGraph(state.graph, ids);
-  for (const id of ids) dropMeta(state.activeMapId, id);
+  state.clipboard = packSelection(expanded, "cut", ids);
+  removeNodesFromGraph(state.graph, expanded);
+  for (const id of expanded) dropMeta(state.activeMapId, id);
   markMapEdited();
   persistMaps();
   closeDeviceDialog();
   paintGraph(state.graph, state.title, state.activeMapId);
-  setEditToast(`Cut ${ids.length} device${ids.length === 1 ? "" : "s"}. Paste onto another map.`);
+  setEditToast(`${describeDevicePack(ids, expanded, "Cut")}. Paste onto another map.`);
 }
 
 function pasteClipboard() {
@@ -822,7 +882,13 @@ function pasteClipboard() {
   markMapEdited();
   persistMaps();
   paintGraph(state.graph, state.title, state.activeMapId);
-  setEditToast(`Pasted ${clip.nodes.length} device${clip.nodes.length === 1 ? "" : "s"} onto ${getMap(state.activeMapId)?.name || "this map"}.`);
+  const destName = getMap(state.activeMapId)?.name || "this map";
+  const n = clip.nodes.length;
+  const extra = clip.bundledClients || 0;
+  const msg = extra
+    ? `Pasted ${n} devices onto ${destName} (AP and ${extra} associated client${extra === 1 ? "" : "s"}).`
+    : `Pasted ${n} device${n === 1 ? "" : "s"} onto ${destName}.`;
+  setEditToast(msg);
 }
 
 function deleteSelected() {
@@ -854,9 +920,10 @@ function moveSelectedTo(mapId) {
   const dest = getMap(mapId);
   if (!dest) return;
   snapshotUndo("move");
-  const pack = packSelection(ids, "move");
-  removeNodesFromGraph(state.graph, ids);
-  for (const id of ids) dropMeta(state.activeMapId, id);
+  const expanded = expandSelectionForApNetwork(ids);
+  const pack = packSelection(expanded, "move", ids);
+  removeNodesFromGraph(state.graph, expanded);
+  for (const id of expanded) dropMeta(state.activeMapId, id);
   dest.graph = dest.graph || emptyGraph(dest.name);
   const used = new Set((dest.graph.nodes || []).map((n) => n.id));
   const idMap = {};
@@ -891,7 +958,7 @@ function moveSelectedTo(mapId) {
   persistMaps();
   closeDeviceDialog();
   paintGraph(state.graph, state.title, state.activeMapId);
-  setEditToast(`Moved ${ids.length} device${ids.length === 1 ? "" : "s"} to ${dest.name}.`);
+  setEditToast(`${describeDevicePack(ids, expanded, "Moved")} to ${dest.name}.`);
 }
 
 function moveSelectedToUnwanted() {
