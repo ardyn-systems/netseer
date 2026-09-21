@@ -836,11 +836,12 @@ async function emptyUnwanted() {
     for (const id of ids) dropMeta(UNWANTED_ID, id);
     map.graph = graph;
     map.edited = true;
-    persistMaps();
-    if (state.activeMapId === UNWANTED_ID) paintGraph(graph, map.name, map.id);
-    else {
-      renderMapList();
+    if (state.activeMapId === UNWANTED_ID) {
+      paintGraph(cloneData(graph), map.name, map.id);
     }
+    persistMaps();
+    renderMapList();
+    fillMoveToSelect();
     const names = (payload.files || []).join(", ");
     setEditToast(`Wrote ${names || "Unwanted dump"} and emptied Unwanted.`);
   } catch (err) {
