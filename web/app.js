@@ -796,13 +796,15 @@ function describeDevicePack(originalIds, expandedIds, verb) {
   return `${base} (AP and ${extra} associated client${extra === 1 ? "" : "s"})`;
 }
 
-function packSelection(ids, mode) {
+function packSelection(ids, mode, originalIds) {
   const idSet = new Set(ids);
   const nodes = (state.graph.nodes || []).filter((n) => idSet.has(n.id)).map((n) => overlayNode(n));
   const links = (state.graph.links || []).filter((l) => idSet.has(l.source) && idSet.has(l.target));
   const meta = {};
   for (const id of ids) meta[id] = cloneData(getDeviceMeta(id));
-  return { mode, fromMap: state.activeMapId, nodes, links, meta };
+  const orig = new Set(originalIds || ids);
+  const extra = ids.filter((id) => !orig.has(id)).length;
+  return { mode, fromMap: state.activeMapId, nodes, links, meta, bundledClients: extra };
 }
 
 function removeNodesFromGraph(graph, ids) {
@@ -818,7 +820,7 @@ function copySelected() {
     return;
   }
   const expanded = expandSelectionForApNetwork(ids);
-  state.clipboard = packSelection(expanded, "copy");
+  state.clipboard = packSelection(expanded, "copy", ids);
   persistMaps();
   setEditToast(`${describeDevicePack(ids, expanded, "Copied")}. Switch maps, then Paste.`);
 }
@@ -831,7 +833,7 @@ function cutSelected() {
   }
   const expanded = expandSelectionForApNetwork(ids);
   snapshotUndo("cut");
-  state.clipboard = packSelection(expanded, "cut");
+  state.clipboard = packSelection(expanded, "cut", ids);
   removeNodesFromGraph(state.graph, expanded);
   for (const id of expanded) dropMeta(state.activeMapId, id);
   markMapEdited();
@@ -880,7 +882,13 @@ function pasteClipboard() {
   markMapEdited();
   persistMaps();
   paintGraph(state.graph, state.title, state.activeMapId);
-  setEditToast(`Pasted ${clip.nodes.length} device${clip.nodes.length === 1 ? "" : "s"} onto ${getMap(state.activeMapId)?.name || "this map"}.`);
+  const destName = getMap(state.activeMapId)?.name || "this map";
+  const n = clip.nodes.length;
+  const extra = clip.bundledClients || 0;
+  const msg = extra
+    ? `Pasted ${n} devices onto ${destName} (AP and ${extra} associated client${extra === 1 ? "" : "s"}).`
+    : `Pasted ${n} device${n === 1 ? "" : "s"} onto ${destName}.`;
+  setEditToast(msg);
 }
 
 function deleteSelected() {
@@ -913,7 +921,7 @@ function moveSelectedTo(mapId) {
   if (!dest) return;
   snapshotUndo("move");
   const expanded = expandSelectionForApNetwork(ids);
-  const pack = packSelection(expanded, "move");
+  const pack = packSelection(expanded, "move", ids);
   removeNodesFromGraph(state.graph, expanded);
   for (const id of expanded) dropMeta(state.activeMapId, id);
   dest.graph = dest.graph || emptyGraph(dest.name);
