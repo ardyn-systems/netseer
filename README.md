@@ -44,17 +44,16 @@ Node labels include identity plus listen ports/services. Edge labels include `se
 
 A longer Debian/Ubuntu walkthrough (clone, install, CLI, map layers, device edits, exports) is in [docs/netseer-install-and-use.md](docs/netseer-install-and-use.md).
 
-## Clone (private repo)
+## Clone
+
+The repo is public. No GitHub login is required.
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y git python3 python3-venv python3-pip curl
-gh auth login --hostname github.com --git-protocol https --web   # once
-gh repo clone ardyn-systems/netseer
+git clone https://github.com/ardyn-systems/netseer.git
 cd netseer
 ```
-
-HTTPS: `git clone https://github.com/ardyn-systems/netseer.git` (username + PAT). SSH: `git clone git@github.com:ardyn-systems/netseer.git`.
 
 ## Run on Debian / Ubuntu
 

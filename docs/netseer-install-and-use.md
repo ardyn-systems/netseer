@@ -17,14 +17,12 @@ It is **not** an installer `.deb`, AppImage, or standalone binary. You run it fr
 
 Bundled campus samples ship in `src/surveymap/data/` so you can click around without uploading anything.
 
-**Source:** [https://github.com/ardyn-systems/netseer](https://github.com/ardyn-systems/netseer) (private). Branch: `main`.
+**Source:** [https://github.com/ardyn-systems/netseer](https://github.com/ardyn-systems/netseer) (public). Branch: `main`.
 
 ## Requirements
 
 - **OS:** Debian-family Linux (Debian, Ubuntu, Mint, …). Other distros work if you have Python 3.12+ and git.
 - **Python:** **3.12 or newer** (`requires-python = ">=3.12"`). Ubuntu 24.04 is fine. Debian 12’s default `python3` is 3.11 — use 3.12 (or let `uv` fetch it).
-- **GitHub access** to `ardyn-systems/netseer` (the repo is private). You need to be logged in as someone who can read it.
-
 ```bash
 sudo apt-get update
 sudo apt-get install -y git python3 python3-venv python3-pip curl
@@ -36,26 +34,9 @@ Python deps (installed into the venv, not apt): FastAPI, uvicorn, python-multipa
 
 ## 1. Clone the repo
 
+The repo is **public**. No GitHub login, PAT, or `gh` is required to clone.
+
 On the Linux box that will run NetSeer:
-
-### HTTPS with GitHub CLI (preferred)
-
-```bash
-# one-time on that machine
-gh auth login --hostname github.com --git-protocol https --web
-gh auth status   # should show your account with repo scope
-
-gh repo clone ardyn-systems/netseer
-cd netseer
-git checkout main
-git pull
-```
-
-`gh repo clone` uses the token from `gh auth login`, so a private clone works without embedding a password in the URL.
-
-### HTTPS with git only
-
-GitHub will not accept your account password. Use a [personal access token](https://github.com/settings/tokens) with `repo` scope as the password, or cache credentials after `gh auth login` (`gh auth setup-git`).
 
 ```bash
 git clone https://github.com/ardyn-systems/netseer.git
@@ -64,20 +45,9 @@ git checkout main
 git pull
 ```
 
-When prompted: username = your GitHub username, password = the PAT (not your GitHub password).
-
-### SSH
-
-If this machine already has an SSH key added to GitHub:
-
-```bash
-git clone git@github.com:ardyn-systems/netseer.git
-cd netseer
-git checkout main
-git pull
-```
-
 You should see `README.md`, `pyproject.toml`, `src/`, `web/`, and `docs/`. Stay on **`main`**.
+
+Optional: `gh repo clone ardyn-systems/netseer` if you already use GitHub CLI, or `git clone git@github.com:ardyn-systems/netseer.git` if this machine has an SSH key on GitHub.
 
 To refresh later:
 
@@ -241,11 +211,9 @@ uv run python -m surveymap.compile_oui /tmp/oui.csv /tmp/mam.csv /tmp/oui36.csv 
 | --- | --- |
 | Product | NetSeer |
 | Motto | Turn traffic into terrain. |
-| Repo | https://github.com/ardyn-systems/netseer (private) |
+| Repo | https://github.com/ardyn-systems/netseer (public) |
 | Branch | `main` |
-| Clone (gh) | `gh repo clone ardyn-systems/netseer` |
-| Clone (HTTPS) | `git clone https://github.com/ardyn-systems/netseer.git` |
-| Clone (SSH) | `git clone git@github.com:ardyn-systems/netseer.git` |
+| Clone | `git clone https://github.com/ardyn-systems/netseer.git` |
 | CLI | `netseer` |
 | Python import | `surveymap` |
 | Default URL | http://127.0.0.1:47331 |
