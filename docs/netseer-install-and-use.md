@@ -2,7 +2,7 @@
 
 **Turn traffic into terrain.**
 
-Walkthrough for installing the NetSeer preview on Debian/Ubuntu and using the browser map. One local Python web app; not a compiled binary yet.
+Walkthrough for cloning NetSeer from GitHub, installing it on Debian/Ubuntu, and using the browser map. One local Python web app; not a compiled binary yet.
 
 ## What it is
 
@@ -17,25 +17,48 @@ It is **not** an installer `.deb`, AppImage, or standalone binary. You run it fr
 
 Bundled campus samples ship in `src/surveymap/data/` so you can click around without uploading anything.
 
+**Source:** [https://github.com/ardyn-systems/netseer](https://github.com/ardyn-systems/netseer) (public). Branch: `main`.
+
 ## Requirements
 
-- **OS:** Debian-family Linux (Debian, Ubuntu, Mint, …). Other distros work if you have Python 3.12+.
+- **OS:** Debian-family Linux (Debian, Ubuntu, Mint, …). Other distros work if you have Python 3.12+ and git.
 - **Python:** **3.12 or newer** (`requires-python = ">=3.12"`). Ubuntu 24.04 is fine. Debian 12’s default `python3` is 3.11 — use 3.12 (or let `uv` fetch it).
-- **Packages the README actually installs:**
-
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3 python3-venv python3-pip
+sudo apt-get install -y git python3 python3-venv python3-pip curl
 ```
 
-- **Optional but useful:** `curl` (uv installer, IEEE OUI refresh), `git` (if you clone).
 - **No database, no login, no extra daemons.** Scapy reads pcap files from disk; this preview does not live-sniff.
 
 Python deps (installed into the venv, not apt): FastAPI, uvicorn, python-multipart, scapy, reportlab.
 
-## Install from source
+## 1. Clone the repo
 
-Get the project tree onto the box first (see [[#Next steps on your own Linux computer]]). Then pick **uv** or **venv + pip**.
+The repo is **public**. No GitHub login, PAT, or `gh` is required to clone.
+
+On the Linux box that will run NetSeer:
+
+```bash
+git clone https://github.com/ardyn-systems/netseer.git
+cd netseer
+git checkout main
+git pull
+```
+
+You should see `README.md`, `pyproject.toml`, `src/`, `web/`, and `docs/`. Stay on **`main`**.
+
+Optional: `gh repo clone ardyn-systems/netseer` if you already use GitHub CLI, or `git clone git@github.com:ardyn-systems/netseer.git` if this machine has an SSH key on GitHub.
+
+To refresh later:
+
+```bash
+cd netseer
+git pull origin main
+```
+
+## 2. Install Python deps
+
+Pick **uv** or **venv + pip**. Run these from the cloned `netseer` directory.
 
 ### Path A — uv (preferred)
 
@@ -45,7 +68,7 @@ Get the project tree onto the box first (see [[#Next steps on your own Linux com
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # open a new shell, or: source $HOME/.local/bin/env
 
-cd /path/to/netseer
+cd netseer
 uv python install 3.12
 uv sync --group dev
 uv run python -m surveymap.generate_samples
@@ -56,7 +79,7 @@ uv run python -m surveymap.generate_samples
 ### Path B — python3 venv and pip
 
 ```bash
-cd /path/to/netseer
+cd netseer
 python3 -m venv .venv
 source .venv/bin/activate
 python -c "import sys; assert sys.version_info >= (3, 12), sys.version"
@@ -69,17 +92,17 @@ If `python3` is 3.11, install 3.12 and call it explicitly (`python3.12 -m venv .
 
 `generate_samples` rewrites the bundled `.pcap` / `.pcapng` / Kismet / airodump files under `src/surveymap/data/`. Skip it if those files are already there.
 
-## Start the preview
+## 3. Start the preview
 
 Default bind is **all interfaces**, port **47331**.
 
 ```bash
 # uv
-uv run netseer --host 0.0.0.0 --port 47331
+uv run netseer --host 127.0.0.1 --port 47331
 
 # venv
 source .venv/bin/activate
-netseer --host 0.0.0.0 --port 47331
+netseer --host 127.0.0.1 --port 47331
 ```
 
 Open [http://127.0.0.1:47331](http://127.0.0.1:47331).
@@ -187,6 +210,8 @@ Need a map loaded (buttons disable on empty).
 
 Device-window downloads are per node. Map-name, extra, notes, and field edits are included in the graph posted to the server.
 
+Edits live in **this browser’s** `localStorage` (`netseer.deviceMeta.v1`, `netseer.hiddenSamples`). They are not written back into the pcap.
+
 ## Optional: tests and OUI table
 
 ```bash
@@ -226,6 +251,7 @@ Maps and field edits live in **this browser’s** `localStorage` (`netseer.devic
 | Product | NetSeer |
 | Motto | Turn traffic into terrain. |
 | Repo | https://github.com/ardyn-systems/netseer (public) |
+| Branch | `main` |
 | Clone | `git clone https://github.com/ardyn-systems/netseer.git` |
 | CLI | `netseer` |
 | Python import | `surveymap` |
