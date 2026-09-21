@@ -102,7 +102,7 @@ Left **Maps** list holds every map in the session:
 - Survey maps — created when you load a sample or upload.
 - **New blank map** (header or Maps panel) — empty canvas. No campus sample required. Paste onto it, or leave it empty.
 
-Switch maps by clicking a row. The active map is what you edit and export.
+Switch maps by clicking a row. The active map is what you edit and export. Each map keeps its own devices when you switch.
 
 **Select** a device (click; Shift-click adds; Shift-drag boxes). Then:
 
@@ -217,7 +217,7 @@ uv run netseer --host 127.0.0.1 --port 47331
 
 Open http://127.0.0.1:47331. Try **New blank map**, **Move to Unwanted**, Cut / Copy / Paste, then export draw.io.
 
-Maps and field edits live in **this browser’s** `localStorage` (`netseer.deviceMeta.v1`, `netseer.maps.v1`, `netseer.hiddenSamples`). They are not written back into the pcap.
+Maps and field edits live in **this browser’s** `localStorage` (`netseer.deviceMeta.v1`, `netseer.maps.v2`, `netseer.hiddenSamples`). They are not written back into the pcap.
 
 ## Quick reference
 
@@ -225,6 +225,8 @@ Maps and field edits live in **this browser’s** `localStorage` (`netseer.devic
 | --- | --- |
 | Product | NetSeer |
 | Motto | Turn traffic into terrain. |
+| Repo | https://github.com/ardyn-systems/netseer (public) |
+| Clone | `git clone https://github.com/ardyn-systems/netseer.git` |
 | CLI | `netseer` |
 | Python import | `surveymap` |
 | Default URL | http://127.0.0.1:47331 |

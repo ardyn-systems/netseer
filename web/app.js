@@ -1,6 +1,6 @@
 /* NetSeer preview — cytoscape map, samples, upload, export. */
 const HIDDEN_SAMPLES_KEY = "netseer.hiddenSamples";
-const MAPS_KEY = "netseer.maps.v1";
+const MAPS_KEY = "netseer.maps.v2";
 const UNWANTED_ID = "map:unwanted";
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 4;
@@ -59,11 +59,23 @@ function allDeviceMeta() {
 }
 
 function metaStorageKey(nodeId) {
-  return `${state.activeId || "map"}::${nodeId}`;
+  return `${state.activeMapId || state.activeId || "map"}::${nodeId}`;
 }
 
 function getDeviceMeta(nodeId) {
-  return allDeviceMeta()[metaStorageKey(nodeId)] || {};
+  const all = allDeviceMeta();
+  const primary = all[metaStorageKey(nodeId)];
+  if (primary) return primary;
+  const map = getMap(state.activeMapId);
+  if (map?.sourceId) {
+    const legacy = all[`${map.sourceId}::${nodeId}`];
+    if (legacy) return legacy;
+  }
+  if (state.activeId && state.activeId !== state.activeMapId) {
+    const legacy = all[`${state.activeId}::${nodeId}`];
+    if (legacy) return legacy;
+  }
+  return {};
 }
 
 function setDeviceMeta(nodeId, patch) {
@@ -516,9 +528,19 @@ function ensureUnwanted() {
       name: "Unwanted",
       kind: "unwanted",
       sourceId: null,
+      edited: false,
       graph: emptyGraph("Unwanted"),
     });
   }
+}
+
+function mapNodeCount(map) {
+  return (map?.graph?.nodes || []).length;
+}
+
+function markMapEdited(mapId) {
+  const map = getMap(mapId || state.activeMapId);
+  if (map) map.edited = true;
 }
 
 function syncActiveMapGraph() {
@@ -556,8 +578,10 @@ function upsertMap(partial) {
   ensureUnwanted();
   const existing = getMap(partial.id);
   if (existing) {
+    const edited = existing.edited;
     Object.assign(existing, partial);
     if (partial.graph) existing.graph = cloneData(partial.graph);
+    if (!("edited" in partial)) existing.edited = edited;
     return existing;
   }
   const map = {
@@ -565,6 +589,7 @@ function upsertMap(partial) {
     name: partial.name || "Map",
     kind: partial.kind || "blank",
     sourceId: partial.sourceId || null,
+    edited: Boolean(partial.edited),
     graph: cloneData(partial.graph || emptyGraph(partial.name)),
   };
   if (map.kind === "unwanted") state.maps.unshift(map);
@@ -573,14 +598,17 @@ function upsertMap(partial) {
 }
 
 function showMap(mapId) {
-  syncActiveMapGraph();
   const map = getMap(mapId);
   if (!map) return;
+  if (state.activeMapId && state.activeMapId !== map.id) {
+    const prev = getMap(state.activeMapId);
+    if (prev && state.graph) prev.graph = cloneData(state.graph);
+  }
   state.activeMapId = map.id;
-  persistMaps();
   closeDeviceDialog();
   inspect(null, null);
   paintGraph(cloneData(map.graph), map.name, map.id);
+  persistMaps();
 }
 
 function renderMapList() {
@@ -599,7 +627,7 @@ function renderMapList() {
     btn.type = "button";
     btn.className = "map-load";
     if (map.id === state.activeMapId) btn.classList.add("active");
-    const n = (map.graph?.nodes || []).length;
+    const n = mapNodeCount(map);
     const kindLabel = map.kind === "unwanted" ? "Holding map" : map.kind === "blank" ? "Blank map" : "Survey map";
     btn.innerHTML = `${escapeHtml(map.name)}<small>${escapeHtml(kindLabel)} · ${n} devices</small>`;
     btn.addEventListener("click", () => showMap(map.id));
@@ -624,7 +652,6 @@ function fillMoveToSelect() {
 }
 
 function createBlankMap() {
-  syncActiveMapGraph();
   const n = state.maps.filter((m) => m.kind === "blank").length + 1;
   const map = upsertMap({
     id: `map:blank-${Date.now()}`,
@@ -632,7 +659,6 @@ function createBlankMap() {
     kind: "blank",
     graph: emptyGraph("Blank map"),
   });
-  persistMaps();
   showMap(map.id);
   setEditToast("Started a blank map. Paste devices or load a survey.");
 }
@@ -669,9 +695,9 @@ function undoLast() {
   state.maps = u.maps;
   localStorage.setItem(META_KEY, JSON.stringify(u.meta || {}));
   state.activeMapId = u.activeMapId;
-  persistMaps();
   closeDeviceDialog();
   paintGraph(u.graph, u.title, u.activeMapId);
+  persistMaps();
   setEditToast("Undid last map edit.");
 }
 
@@ -749,6 +775,7 @@ function cutSelected() {
   state.clipboard = packSelection(ids, "cut");
   removeNodesFromGraph(state.graph, ids);
   for (const id of ids) dropMeta(state.activeMapId, id);
+  markMapEdited();
   persistMaps();
   closeDeviceDialog();
   paintGraph(state.graph, state.title, state.activeMapId);
@@ -791,6 +818,7 @@ function pasteClipboard() {
     usedLinks.add(copy.id);
     state.graph.links.push(copy);
   }
+  markMapEdited();
   persistMaps();
   paintGraph(state.graph, state.title, state.activeMapId);
   setEditToast(`Pasted ${clip.nodes.length} device${clip.nodes.length === 1 ? "" : "s"} onto ${getMap(state.activeMapId)?.name || "this map"}.`);
@@ -805,6 +833,7 @@ function deleteSelected() {
   snapshotUndo("delete");
   removeNodesFromGraph(state.graph, ids);
   for (const id of ids) dropMeta(state.activeMapId, id);
+  markMapEdited();
   persistMaps();
   closeDeviceDialog();
   paintGraph(state.graph, state.title, state.activeMapId);
@@ -856,6 +885,8 @@ function moveSelectedTo(mapId) {
     usedLinks.add(copy.id);
     dest.graph.links.push(copy);
   }
+  markMapEdited();
+  markMapEdited(dest.id);
   persistMaps();
   closeDeviceDialog();
   paintGraph(state.graph, state.title, state.activeMapId);
@@ -1018,7 +1049,8 @@ async function selectSurvey(id) {
   const item = state.surveys.find((s) => s.id === id);
   if (!item) return;
   const mapId = `map:${item.id}`;
-  if (getMap(mapId)) {
+  const existing = getMap(mapId);
+  if (existing && (mapNodeCount(existing) > 0 || existing.edited)) {
     showMap(mapId);
     return;
   }
@@ -1491,12 +1523,17 @@ async function init() {
   });
 
   ensureUnwanted();
+  const restored = restoreMaps();
   renderMapList();
-  if (restoreMaps() && getMap(state.activeMapId)) {
+  const active = getMap(state.activeMapId);
+  const keepRestored =
+    restored &&
+    active &&
+    (active.kind !== "survey" || mapNodeCount(active) > 0 || active.edited);
+  if (keepRestored) {
     showMap(state.activeMapId);
     return;
   }
-  persistMaps();
   const first =
     state.surveys.find((s) => s.id === "campus-all") || state.surveys[0];
   if (first) await selectSurvey(first.id);
