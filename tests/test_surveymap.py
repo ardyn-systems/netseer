@@ -235,3 +235,51 @@ def test_ieee_oui_lookup_and_special_macs():
     assert unknown["manufacturer"] != LOCALLY_ADMINISTERED
     if unknown["oui_assignment"] == "unregistered":
         assert unknown["manufacturer"] == UNKNOWN
+
+
+def test_netseer_json_dump_reload_and_unwanted_filenames(tmp_path, monkeypatch):
+    import json
+
+    from surveymap.detect import sniff_format
+    from surveymap.ingest import ingest_files
+    from surveymap.web import _safe_unwanted_stem, dump_unwanted
+    import surveymap.web as webmod
+
+    monkeypatch.setattr(webmod, "UNWANTED_DIR", tmp_path)
+    payload = {
+        "netseer": "unwanted-v1",
+        "original_capture": "office-lan.pcap",
+        "nodes": [
+            {
+                "id": "mac:00:11:22:33:44:55",
+                "label": "Access point",
+                "kind": "ap",
+                "medium": "wireless",
+                "inferred_type": "Access point",
+            }
+        ],
+        "links": [],
+        "device_meta": {"mac:00:11:22:33:44:55": {"notes": "lobby"}},
+    }
+    raw = json.dumps(payload).encode()
+    assert sniff_format(raw, "Unwanted-office-lan.json") == "netseer-json"
+    graph = ingest_files([("Unwanted-office-lan.json", raw)])
+    assert graph.nodes[0].kind == "ap"
+    assert graph.meta["device_meta"]["mac:00:11:22:33:44:55"]["notes"] == "lobby"
+    assert _safe_unwanted_stem("office-lan.pcap") == "office-lan"
+    assert _safe_unwanted_stem("") == "unknown"
+    result = dump_unwanted(
+        {
+            "groups": [
+                {
+                    "capture": "office-lan.pcap",
+                    "nodes": payload["nodes"],
+                    "links": [],
+                    "device_meta": payload["device_meta"],
+                }
+            ]
+        }
+    )
+    assert result["files"][0] == "Unwanted-office-lan.json"
+    assert (tmp_path / "Unwanted-office-lan.json").is_file()
+

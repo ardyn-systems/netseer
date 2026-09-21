@@ -42,7 +42,7 @@ Wired L2, L3, wireless, VLAN, and service edges can be toggled independently.
 
 Node labels include identity plus listen ports/services. Edge labels include `service proto/port` (for example `http tcp/80`).
 
-A longer Debian/Ubuntu walkthrough (install, CLI, map layers, device edits, exports) is in [docs/netseer-install-and-use.md](docs/netseer-install-and-use.md) — same note as the Obsidian copy.
+A longer Debian/Ubuntu walkthrough is in [docs/netseer-install-and-use.md](docs/netseer-install-and-use.md). A function-by-function How to is in [docs/netseer-how-to.md](docs/netseer-how-to.md).
 
 ## Run on Debian / Ubuntu
 
