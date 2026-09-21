@@ -709,6 +709,7 @@ function setEditToast(msg) {
     return;
   }
   text.textContent = msg;
+  el("edit-toast-undo")?.classList.toggle("hidden", !state.undo);
   box.classList.remove("hidden");
   clearTimeout(setEditToast.timer);
   setEditToast.timer = setTimeout(() => box.classList.add("hidden"), 5000);
