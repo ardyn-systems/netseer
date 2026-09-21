@@ -195,6 +195,10 @@ def test_bridge_attachments_from_evidence_only():
     assert any(link.label == "WDS" or (link.extra or {}).get("bridge_kind") == "wds" for link in wds)
     wifi_xml = export_drawio(wifi)
     assert "WDS" in wifi_xml
+    from surveymap.serialize import graph_from_dict
+
+    roundtrip = graph_from_dict(office.to_dict())
+    assert any(link.kind == "bridge" for link in roundtrip.links)
 
 
 def test_unsupported_and_empty(tmp_path):

@@ -13,7 +13,7 @@ def graph_from_dict(data: dict[str, Any]) -> SurveyGraph:
     for raw in data.get("nodes") or []:
         item = {k: v for k, v in raw.items() if k in node_fields}
         gps = item.get("gps")
-    if isinstance(gps, dict) and "lat" in gps and "lon" in gps:
+        if isinstance(gps, dict) and "lat" in gps and "lon" in gps:
             item["gps"] = GpsFix(
                 lat=float(gps["lat"]),
                 lon=float(gps["lon"]),
