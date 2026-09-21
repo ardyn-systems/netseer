@@ -92,7 +92,30 @@ The CLI name is `netseer`. `surveymap` is also registered as an alias. Leave the
 
 ## How to use
 
-Campus survey (combined) loads on first visit. Empty, loading, and parse-error overlays cover the other states.
+Campus survey (combined) loads on first visit into its own **map**. Empty, loading, and parse-error overlays cover the other states. Maps, device edits, and the clipboard persist in this browser (`localStorage`).
+
+### Maps (blank, Unwanted, cut / copy / paste)
+
+Left **Maps** list holds every map in the session:
+
+- **Unwanted** — holding / quarantine map. Devices you do not want on the working drawing go here, with fields and notes.
+- Survey maps — created when you load a sample or upload.
+- **New blank map** (header or Maps panel) — empty canvas. No campus sample required. Paste onto it, or leave it empty.
+
+Switch maps by clicking a row. The active map is what you edit and export.
+
+**Select** a device (click; Shift-click adds; Shift-drag boxes). Then:
+
+| Action | How |
+| --- | --- |
+| Cut | Cut button, right-click, device window, or Ctrl+X / Cmd+X |
+| Copy | Copy button, right-click, device window, or Ctrl+C / Cmd+C |
+| Paste | Switch to the destination map, then Paste or Ctrl+V / Cmd+V |
+| Move | Cut, switch maps, paste — or **Move to Unwanted** / **Move to** in the device window |
+| Delete | Delete / Backspace, Delete button, right-click, or **Delete from map** in the device window |
+| Undo | Undo or Ctrl+Z / Cmd+Z (last cut, paste, move, or delete) |
+
+Edges travel with a selection only when **both** endpoints are in that selection. Device details, edits, and notes stay with the device.
 
 ### Load and remove surveys
 
@@ -143,6 +166,7 @@ Click a node. The dialog lists extracted fields.
 - Editable: type/kind/medium, TX / RX / DA / RA MACs, other MACs, IPs, VLANs, SSIDs, channel, frequency, encryption, OUI manufacturer, ports/services, GPS, routing, extra JSON, and the rest of the property list. `id` stays read-only.
 - **Your notes** at the bottom.
 - Copy one field, **Copy all**, or download **PDF / CSV / XML / Plain text**. Notes and edits go with those exports when present.
+- **Cut**, **Copy**, **Move to Unwanted**, **Delete from map**, and **Move to** another map sit under the export buttons.
 
 The right **Details** inspector shows the live overlay (including `User-edited: …`). Click a **bridge** edge to see kind `bridge`, mechanism (STP / WDS / attachment), and via device.
 
@@ -182,24 +206,18 @@ uv run python -m surveymap.compile_oui /tmp/oui.csv /tmp/mam.csv /tmp/oui36.csv 
 
 ## Next steps on your own Linux computer
 
-This session could **not** create a public GitHub repo named `netseer`: `gh` is not logged in (`gh auth status` → not logged into any GitHub hosts). There is no clone URL to hand you from here.
-
-Do one of:
-
-1. **Copy the tree** — zip or `rsync` the project directory (including `src/`, `web/`, `tests/`, `pyproject.toml`, `README.md`). On the target box, follow [[#Install from source]] and [[#Start the preview]].
-2. **Make your own GitHub repo** — on a machine where you `gh auth login` (or use the GitHub UI), create `netseer`, add the remote, push this source, then `git clone` on Debian/Ubuntu.
-3. **After a clone URL exists** — `git clone <url> && cd netseer` and use Path A or B above.
-
-Stay on a branch that has the current UI (bridge attachments, editable fields, Show all/none, type labels). Then:
+The project is public: [https://github.com/ardyn-systems/netseer](https://github.com/ardyn-systems/netseer). No PAT required.
 
 ```bash
+git clone https://github.com/ardyn-systems/netseer.git
+cd netseer
 uv sync --group dev
 uv run netseer --host 127.0.0.1 --port 47331
 ```
 
-Open http://127.0.0.1:47331, click **Campus survey (combined)**, try **Show none** / **Show all**, open a Router, edit a field, export draw.io.
+Open http://127.0.0.1:47331. Try **New blank map**, **Move to Unwanted**, Cut / Copy / Paste, then export draw.io.
 
-Edits live in **this browser’s** `localStorage` (`netseer.deviceMeta.v1`, `netseer.hiddenSamples`). They are not written back into the pcap.
+Maps and field edits live in **this browser’s** `localStorage` (`netseer.deviceMeta.v1`, `netseer.maps.v1`, `netseer.hiddenSamples`). They are not written back into the pcap.
 
 ## Quick reference
 

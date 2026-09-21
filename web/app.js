@@ -1,5 +1,7 @@
 /* NetSeer preview — cytoscape map, samples, upload, export. */
 const HIDDEN_SAMPLES_KEY = "netseer.hiddenSamples";
+const MAPS_KEY = "netseer.maps.v1";
+const UNWANTED_ID = "map:unwanted";
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 4;
 
@@ -10,6 +12,10 @@ const state = {
   catalog: [],
   surveys: [],
   activeId: null,
+  maps: [],
+  activeMapId: null,
+  clipboard: null,
+  undo: null,
   filters: {
     l2: true,
     l3: true,
@@ -354,17 +360,39 @@ function renderMap() {
         selector: 'edge[kind = "client-server"]',
         style: { "target-arrow-shape": "triangle", width: 2.5 },
       },
+      {
+        selector: "node:selected",
+        style: { "border-width": 4, "overlay-padding": 4, "overlay-opacity": 0.08, "overlay-color": "#5eead4" },
+      },
     ],
     layout: { name: "cose", animate: false, padding: 24, nodeOverlap: 16, gravity: 0.4 },
+    autoungrabify: true,
+    boxSelectionEnabled: true,
+    selectionType: "additive",
   });
   state.cy.on("tap", "node", (evt) => {
+    if (!evt.originalEvent || !evt.originalEvent.shiftKey) {
+      state.cy.$("node:selected").unselect();
+      evt.target.select();
+    }
     const node = evt.target.data("raw");
     inspect("node", node);
-    openDeviceDialog(node);
+    if (!evt.originalEvent || !evt.originalEvent.shiftKey) openDeviceDialog(node);
   });
   state.cy.on("tap", "edge", (evt) => inspect("link", evt.target.data("raw")));
   state.cy.on("tap", (evt) => {
-    if (evt.target === state.cy) inspect(null, null);
+    if (evt.target === state.cy) {
+      inspect(null, null);
+      if (!evt.originalEvent || !evt.originalEvent.shiftKey) state.cy.$(":selected").unselect();
+    }
+  });
+  state.cy.on("cxttap", (evt) => {
+    evt.preventDefault();
+    if (evt.target !== state.cy && evt.target.isNode && evt.target.isNode()) {
+      evt.target.select();
+      inspect("node", evt.target.data("raw"));
+    }
+    showCtxMenu(evt.originalEvent);
   });
   state.cy.on("zoom", syncZoomUi);
   syncZoomUi();
@@ -464,23 +492,444 @@ async function parseResponse(res) {
   return payload;
 }
 
+function emptyGraph(title) {
+  return {
+    nodes: [],
+    links: [],
+    meta: { sources: [], packet_count: 0, node_count: 0, link_count: 0, warnings: [] },
+    title: title || "Blank map",
+  };
+}
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getMap(id) {
+  return state.maps.find((m) => m.id === id);
+}
+
+function ensureUnwanted() {
+  if (!getMap(UNWANTED_ID)) {
+    state.maps.unshift({
+      id: UNWANTED_ID,
+      name: "Unwanted",
+      kind: "unwanted",
+      sourceId: null,
+      graph: emptyGraph("Unwanted"),
+    });
+  }
+}
+
+function syncActiveMapGraph() {
+  const map = getMap(state.activeMapId);
+  if (map && state.graph) map.graph = cloneData(state.graph);
+}
+
+function persistMaps() {
+  syncActiveMapGraph();
+  try {
+    localStorage.setItem(
+      MAPS_KEY,
+      JSON.stringify({ maps: state.maps, activeMapId: state.activeMapId, clipboard: state.clipboard })
+    );
+  } catch {
+    /* quota */
+  }
+}
+
+function restoreMaps() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MAPS_KEY) || "null");
+    if (!raw || !Array.isArray(raw.maps) || !raw.maps.length) return false;
+    state.maps = raw.maps;
+    state.activeMapId = raw.activeMapId || raw.maps[0].id;
+    state.clipboard = raw.clipboard || null;
+    ensureUnwanted();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function upsertMap(partial) {
+  ensureUnwanted();
+  const existing = getMap(partial.id);
+  if (existing) {
+    Object.assign(existing, partial);
+    if (partial.graph) existing.graph = cloneData(partial.graph);
+    return existing;
+  }
+  const map = {
+    id: partial.id,
+    name: partial.name || "Map",
+    kind: partial.kind || "blank",
+    sourceId: partial.sourceId || null,
+    graph: cloneData(partial.graph || emptyGraph(partial.name)),
+  };
+  if (map.kind === "unwanted") state.maps.unshift(map);
+  else state.maps.push(map);
+  return map;
+}
+
+function showMap(mapId) {
+  syncActiveMapGraph();
+  const map = getMap(mapId);
+  if (!map) return;
+  state.activeMapId = map.id;
+  persistMaps();
+  closeDeviceDialog();
+  inspect(null, null);
+  paintGraph(cloneData(map.graph), map.name, map.id);
+}
+
+function renderMapList() {
+  const list = el("map-list");
+  if (!list) return;
+  list.innerHTML = "";
+  const ordered = [...state.maps].sort((a, b) => {
+    if (a.kind === "unwanted") return -1;
+    if (b.kind === "unwanted") return 1;
+    return 0;
+  });
+  for (const map of ordered) {
+    const row = document.createElement("li");
+    row.className = `map-item${map.kind === "unwanted" ? " unwanted" : ""}`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "map-load";
+    if (map.id === state.activeMapId) btn.classList.add("active");
+    const n = (map.graph?.nodes || []).length;
+    const kindLabel = map.kind === "unwanted" ? "Holding map" : map.kind === "blank" ? "Blank map" : "Survey map";
+    btn.innerHTML = `${escapeHtml(map.name)}<small>${escapeHtml(kindLabel)} · ${n} devices</small>`;
+    btn.addEventListener("click", () => showMap(map.id));
+    row.append(btn);
+    list.appendChild(row);
+  }
+}
+
+function fillMoveToSelect() {
+  const sel = el("device-move-to");
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Choose map…</option>';
+  for (const map of state.maps) {
+    if (map.id === state.activeMapId) continue;
+    const opt = document.createElement("option");
+    opt.value = map.id;
+    opt.textContent = map.name;
+    sel.appendChild(opt);
+  }
+  if (current && [...sel.options].some((o) => o.value === current)) sel.value = current;
+}
+
+function createBlankMap() {
+  syncActiveMapGraph();
+  const n = state.maps.filter((m) => m.kind === "blank").length + 1;
+  const map = upsertMap({
+    id: `map:blank-${Date.now()}`,
+    name: n === 1 ? "Blank map" : `Blank map ${n}`,
+    kind: "blank",
+    graph: emptyGraph("Blank map"),
+  });
+  persistMaps();
+  showMap(map.id);
+  setEditToast("Started a blank map. Paste devices or load a survey.");
+}
+
+function selectedIds() {
+  if (state.cy) {
+    const ids = state.cy.$("node:selected").map((n) => n.id());
+    if (ids.length) return ids;
+  }
+  if (activeDevice) return [activeDevice.id];
+  return [];
+}
+
+function snapshotUndo(label) {
+  syncActiveMapGraph();
+  state.undo = {
+    label,
+    maps: cloneData(state.maps),
+    meta: cloneData(allDeviceMeta()),
+    activeMapId: state.activeMapId,
+    graph: cloneData(state.graph),
+    title: state.title,
+  };
+  const undoBtn = el("btn-undo");
+  if (undoBtn) undoBtn.disabled = false;
+}
+
+function undoLast() {
+  if (!state.undo) return;
+  const u = state.undo;
+  state.undo = null;
+  const undoBtn = el("btn-undo");
+  if (undoBtn) undoBtn.disabled = true;
+  state.maps = u.maps;
+  localStorage.setItem(META_KEY, JSON.stringify(u.meta || {}));
+  state.activeMapId = u.activeMapId;
+  persistMaps();
+  closeDeviceDialog();
+  paintGraph(u.graph, u.title, u.activeMapId);
+  setEditToast("Undid last map edit.");
+}
+
+function setEditToast(msg) {
+  const box = el("edit-toast");
+  const text = el("edit-toast-msg");
+  if (!box || !text) {
+    setStatus(msg);
+    return;
+  }
+  text.textContent = msg;
+  box.classList.remove("hidden");
+  clearTimeout(setEditToast.timer);
+  setEditToast.timer = setTimeout(() => box.classList.add("hidden"), 5000);
+}
+
+function transferMeta(fromMap, toMap, fromId, toId) {
+  const all = allDeviceMeta();
+  const src = all[`${fromMap}::${fromId}`];
+  if (!src) return;
+  all[`${toMap}::${toId}`] = cloneData(src);
+  localStorage.setItem(META_KEY, JSON.stringify(all));
+}
+
+function dropMeta(mapId, nodeId) {
+  const all = allDeviceMeta();
+  delete all[`${mapId}::${nodeId}`];
+  localStorage.setItem(META_KEY, JSON.stringify(all));
+}
+
+function uniqueId(base, used) {
+  if (!used.has(base)) return base;
+  let i = 2;
+  let next = `${base}~${i}`;
+  while (used.has(next)) {
+    i += 1;
+    next = `${base}~${i}`;
+  }
+  return next;
+}
+
+function packSelection(ids, mode) {
+  const idSet = new Set(ids);
+  const nodes = (state.graph.nodes || []).filter((n) => idSet.has(n.id)).map((n) => overlayNode(n));
+  const links = (state.graph.links || []).filter((l) => idSet.has(l.source) && idSet.has(l.target));
+  const meta = {};
+  for (const id of ids) meta[id] = cloneData(getDeviceMeta(id));
+  return { mode, fromMap: state.activeMapId, nodes, links, meta };
+}
+
+function removeNodesFromGraph(graph, ids) {
+  const drop = new Set(ids);
+  graph.nodes = (graph.nodes || []).filter((n) => !drop.has(n.id));
+  graph.links = (graph.links || []).filter((l) => !drop.has(l.source) && !drop.has(l.target));
+}
+
+function copySelected() {
+  const ids = selectedIds();
+  if (!ids.length) {
+    setEditToast("Select a device first.");
+    return;
+  }
+  state.clipboard = packSelection(ids, "copy");
+  persistMaps();
+  setEditToast(`Copied ${ids.length} device${ids.length === 1 ? "" : "s"}. Switch maps, then Paste.`);
+}
+
+function cutSelected() {
+  const ids = selectedIds();
+  if (!ids.length) {
+    setEditToast("Select a device first.");
+    return;
+  }
+  snapshotUndo("cut");
+  state.clipboard = packSelection(ids, "cut");
+  removeNodesFromGraph(state.graph, ids);
+  for (const id of ids) dropMeta(state.activeMapId, id);
+  persistMaps();
+  closeDeviceDialog();
+  paintGraph(state.graph, state.title, state.activeMapId);
+  setEditToast(`Cut ${ids.length} device${ids.length === 1 ? "" : "s"}. Paste onto another map.`);
+}
+
+function pasteClipboard() {
+  const clip = state.clipboard;
+  if (!clip || !clip.nodes?.length) {
+    setEditToast("Clipboard is empty.");
+    return;
+  }
+  snapshotUndo("paste");
+  if (!state.graph) state.graph = emptyGraph(state.title);
+  const used = new Set((state.graph.nodes || []).map((n) => n.id));
+  const idMap = {};
+  for (const node of clip.nodes) {
+    const nextId = uniqueId(node.id, used);
+    idMap[node.id] = nextId;
+    used.add(nextId);
+    const copy = cloneData(node);
+    copy.id = nextId;
+    state.graph.nodes.push(copy);
+    const meta = clip.meta?.[node.id];
+    if (meta) {
+      const all = allDeviceMeta();
+      all[`${state.activeMapId}::${nextId}`] = cloneData(meta);
+      localStorage.setItem(META_KEY, JSON.stringify(all));
+    }
+  }
+  const usedLinks = new Set((state.graph.links || []).map((l) => l.id));
+  for (const link of clip.links || []) {
+    const source = idMap[link.source];
+    const target = idMap[link.target];
+    if (!source || !target) continue;
+    const copy = cloneData(link);
+    copy.source = source;
+    copy.target = target;
+    copy.id = uniqueId(link.id, usedLinks);
+    usedLinks.add(copy.id);
+    state.graph.links.push(copy);
+  }
+  persistMaps();
+  paintGraph(state.graph, state.title, state.activeMapId);
+  setEditToast(`Pasted ${clip.nodes.length} device${clip.nodes.length === 1 ? "" : "s"} onto ${getMap(state.activeMapId)?.name || "this map"}.`);
+}
+
+function deleteSelected() {
+  const ids = selectedIds();
+  if (!ids.length) {
+    setEditToast("Select a device first.");
+    return;
+  }
+  snapshotUndo("delete");
+  removeNodesFromGraph(state.graph, ids);
+  for (const id of ids) dropMeta(state.activeMapId, id);
+  persistMaps();
+  closeDeviceDialog();
+  paintGraph(state.graph, state.title, state.activeMapId);
+  setEditToast(`Deleted ${ids.length} device${ids.length === 1 ? "" : "s"}. Undo if that was a mistake.`);
+}
+
+function moveSelectedTo(mapId) {
+  const ids = selectedIds();
+  if (!ids.length) {
+    setEditToast("Select a device first.");
+    return;
+  }
+  if (!mapId || mapId === state.activeMapId) {
+    setEditToast("That device is already on this map.");
+    return;
+  }
+  const dest = getMap(mapId);
+  if (!dest) return;
+  snapshotUndo("move");
+  const pack = packSelection(ids, "move");
+  removeNodesFromGraph(state.graph, ids);
+  for (const id of ids) dropMeta(state.activeMapId, id);
+  dest.graph = dest.graph || emptyGraph(dest.name);
+  const used = new Set((dest.graph.nodes || []).map((n) => n.id));
+  const idMap = {};
+  for (const node of pack.nodes) {
+    const nextId = uniqueId(node.id, used);
+    idMap[node.id] = nextId;
+    used.add(nextId);
+    const copy = cloneData(node);
+    copy.id = nextId;
+    dest.graph.nodes.push(copy);
+    const meta = pack.meta?.[node.id];
+    if (meta) {
+      const all = allDeviceMeta();
+      all[`${dest.id}::${nextId}`] = cloneData(meta);
+      localStorage.setItem(META_KEY, JSON.stringify(all));
+    }
+  }
+  const usedLinks = new Set((dest.graph.links || []).map((l) => l.id));
+  for (const link of pack.links || []) {
+    const source = idMap[link.source];
+    const target = idMap[link.target];
+    if (!source || !target) continue;
+    const copy = cloneData(link);
+    copy.source = source;
+    copy.target = target;
+    copy.id = uniqueId(link.id, usedLinks);
+    usedLinks.add(copy.id);
+    dest.graph.links.push(copy);
+  }
+  persistMaps();
+  closeDeviceDialog();
+  paintGraph(state.graph, state.title, state.activeMapId);
+  setEditToast(`Moved ${ids.length} device${ids.length === 1 ? "" : "s"} to ${dest.name}.`);
+}
+
+function moveSelectedToUnwanted() {
+  ensureUnwanted();
+  moveSelectedTo(UNWANTED_ID);
+}
+
+function hideCtxMenu() {
+  el("ctx-menu")?.classList.add("hidden");
+}
+
+function showCtxMenu(orig) {
+  const menu = el("ctx-menu");
+  if (!menu || !orig) return;
+  menu.classList.remove("hidden");
+  const x = Math.min(orig.clientX, window.innerWidth - 180);
+  const y = Math.min(orig.clientY, window.innerHeight - 220);
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+}
+
+function isTypingTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+}
+
 function applyGraph(graph, title, surveyId) {
-  state.graph = graph;
-  state.title = title || "NetSeer map";
-  if (surveyId) state.activeId = surveyId;
-  const n = graph.nodes?.length || 0;
-  const e = graph.links?.length || 0;
+  const id = surveyId || state.activeMapId || `map:${Date.now()}`;
+  upsertMap({
+    id: id.startsWith("map:") || id === UNWANTED_ID ? id : `map:${id}`,
+    name: title || "NetSeer map",
+    kind: id === UNWANTED_ID || surveyId === UNWANTED_ID ? "unwanted" : "survey",
+    sourceId: surveyId || null,
+    graph,
+  });
+  showMap(id.startsWith("map:") || id === UNWANTED_ID ? id : `map:${id}`);
+}
+
+function paintGraph(graph, title, mapId) {
+  state.graph = graph && graph.nodes ? graph : emptyGraph(title);
+  state.title = title || state.title || "NetSeer map";
+  if (mapId) {
+    state.activeMapId = mapId;
+    state.activeId = mapId;
+  }
+  const n = state.graph.nodes?.length || 0;
+  const e = state.graph.links?.length || 0;
   const services = new Set();
-  for (const node of graph.nodes || []) (node.services || []).forEach((s) => services.add(s));
-  setStatus(`${n} nodes · ${e} links · ${services.size} services`);
+  for (const node of state.graph.nodes || []) (node.services || []).forEach((s) => services.add(s));
+  const mapName = (getMap(state.activeMapId) || {}).name || state.title;
+  setStatus(`${mapName} · ${n} nodes · ${e} links · ${services.size} services`);
   ["btn-drawio", "btn-vsdx", "btn-vdx", "btn-report"].forEach((id) => {
     el(id).disabled = n === 0;
   });
   show("empty", n === 0);
   show("loading", false);
   show("error", false);
-  renderMap();
+  if (n === 0) {
+    if (state.cy) {
+      state.cy.destroy();
+      state.cy = null;
+    }
+    syncZoomUi();
+  } else {
+    renderMap();
+  }
   renderSurveyList();
+  renderMapList();
+  fillMoveToSelect();
 }
 
 function clearMap() {
@@ -546,7 +995,7 @@ function renderSurveyList() {
     const load = document.createElement("button");
     load.type = "button";
     load.className = "survey-load";
-    if (item.id === state.activeId) load.classList.add("active");
+    if (item.id === state.activeId || `map:${item.id}` === state.activeMapId) load.classList.add("active");
     load.dataset.id = item.id;
     const kicker = item.kind === "upload" ? "Uploaded capture" : item.summary;
     load.innerHTML = `${escapeHtml(item.name)}<small>${escapeHtml(kicker)}</small>`;
@@ -568,6 +1017,11 @@ function renderSurveyList() {
 async function selectSurvey(id) {
   const item = state.surveys.find((s) => s.id === id);
   if (!item) return;
+  const mapId = `map:${item.id}`;
+  if (getMap(mapId)) {
+    showMap(mapId);
+    return;
+  }
   if (item.kind === "upload") {
     applyGraph(item.graph, item.name, item.id);
     return;
@@ -593,14 +1047,14 @@ function removeSurvey(id) {
       saveHiddenSampleIds(hidden);
     }
   }
-  if (state.activeId !== id) {
+  if (state.activeMapId !== `map:${id}` && state.activeId !== id && state.activeId !== `map:${id}`) {
     renderSurveyList();
     return;
   }
   closeDeviceDialog();
   const next = state.surveys[idx] || state.surveys[idx - 1] || state.surveys[0];
   if (next) selectSurvey(next.id);
-  else clearMap();
+  else showMap(UNWANTED_ID);
 }
 
 function restoreBundledSamples() {
@@ -845,6 +1299,7 @@ async function openDeviceDialog(node) {
     );
     activeDevice = { ...node, properties: payload.properties, text: payload.properties };
     renderDeviceFields(payload.properties, node);
+    fillMoveToSelect();
   } catch (err) {
     el("device-fields").innerHTML = `<p class="hint">${escapeHtml(err.message || String(err))}</p>`;
   }
@@ -977,14 +1432,75 @@ async function init() {
   document.querySelectorAll("[data-device-export]").forEach((btn) => {
     btn.addEventListener("click", () => exportDevice(btn.dataset.deviceExport));
   });
+  const newMap = () => createBlankMap();
+  el("btn-new-map")?.addEventListener("click", newMap);
+  el("btn-blank-map")?.addEventListener("click", newMap);
+  el("btn-cut")?.addEventListener("click", cutSelected);
+  el("btn-copy-sel")?.addEventListener("click", copySelected);
+  el("btn-paste")?.addEventListener("click", pasteClipboard);
+  el("btn-delete-sel")?.addEventListener("click", deleteSelected);
+  el("btn-to-unwanted")?.addEventListener("click", moveSelectedToUnwanted);
+  el("btn-undo")?.addEventListener("click", undoLast);
+  el("edit-toast-undo")?.addEventListener("click", undoLast);
+  el("device-cut")?.addEventListener("click", cutSelected);
+  el("device-copy")?.addEventListener("click", copySelected);
+  el("device-unwanted")?.addEventListener("click", moveSelectedToUnwanted);
+  el("device-delete")?.addEventListener("click", deleteSelected);
+  el("device-move-to")?.addEventListener("change", (e) => {
+    const dest = e.target.value;
+    e.target.value = "";
+    if (dest) moveSelectedTo(dest);
+  });
+  el("ctx-menu")?.querySelectorAll("[data-ctx]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const act = btn.dataset.ctx;
+      hideCtxMenu();
+      if (act === "cut") cutSelected();
+      else if (act === "copy") copySelected();
+      else if (act === "paste") pasteClipboard();
+      else if (act === "unwanted") moveSelectedToUnwanted();
+      else if (act === "delete") deleteSelected();
+    });
+  });
+  document.addEventListener("click", () => hideCtxMenu());
+  el("map")?.addEventListener("contextmenu", (e) => e.preventDefault());
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeDeviceDialog();
+    if (e.key === "Escape") {
+      closeDeviceDialog();
+      hideCtxMenu();
+      return;
+    }
+    if (isTypingTarget(e.target)) return;
+    const cmd = e.ctrlKey || e.metaKey;
+    if (cmd && e.key.toLowerCase() === "c") {
+      e.preventDefault();
+      copySelected();
+    } else if (cmd && e.key.toLowerCase() === "x") {
+      e.preventDefault();
+      cutSelected();
+    } else if (cmd && e.key.toLowerCase() === "v") {
+      e.preventDefault();
+      pasteClipboard();
+    } else if (cmd && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      undoLast();
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      deleteSelected();
+    }
   });
 
+  ensureUnwanted();
+  renderMapList();
+  if (restoreMaps() && getMap(state.activeMapId)) {
+    showMap(state.activeMapId);
+    return;
+  }
+  persistMaps();
   const first =
     state.surveys.find((s) => s.id === "campus-all") || state.surveys[0];
   if (first) await selectSurvey(first.id);
-  else clearMap();
+  else showMap(UNWANTED_ID);
 }
 
 init().catch((err) => fail(err));
