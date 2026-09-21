@@ -92,3 +92,18 @@ uv run python -m surveymap.compile_oui /tmp/oui.csv /tmp/mam.csv /tmp/oui36.csv 
 ```bash
 uv run pytest
 ```
+
+## Update
+
+```bash
+cd netseer
+git pull origin main
+uv sync --group dev          # or: pip install -e ".[dev]"
+uv run netseer --host 127.0.0.1 --port 47331
+```
+
+Stop the old process first (`Ctrl+C`). Hard-refresh the browser.
+
+## Uninstall
+
+Stop `netseer`, then delete the clone (`rm -rf /path/to/netseer`). That removes source and the virtualenv. Do not apt-remove `python3` / `git` unless you want them gone system-wide. Optional: clear this origin’s localStorage in the browser (`netseer.deviceMeta.v1`, `netseer.maps.v2`, `netseer.hiddenSamples`).

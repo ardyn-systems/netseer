@@ -246,6 +246,58 @@ Open http://127.0.0.1:47331. Try **New blank map**, **Move to Unwanted**, Cut / 
 
 Maps and field edits live in **this browser’s** `localStorage` (`netseer.deviceMeta.v1`, `netseer.maps.v2`, `netseer.hiddenSamples`). They are not written back into the pcap.
 
+## 4. Update on your Linux computer
+
+When we push changes to GitHub `main`, refresh the clone and reinstall deps, then restart the preview. **Stop** a running `netseer` first (`Ctrl+C` in that terminal).
+
+```bash
+cd netseer
+git checkout main
+git pull origin main
+```
+
+Then one of:
+
+```bash
+# uv
+uv sync --group dev
+uv run netseer --host 127.0.0.1 --port 47331
+
+# venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+netseer --host 127.0.0.1 --port 47331
+```
+
+Hard-refresh the browser (Ctrl+Shift+R) so it does not keep an old `app.js`. Map edits in `localStorage` stay; they are not in git.
+
+If `git pull` reports local changes you do not care about: `git restore .` then `git pull origin main`. Do not `git restore` if you edited files you want to keep.
+
+## 5. Uninstall
+
+NetSeer is the clone directory plus a virtualenv. It does not install a systemd service or an apt package named `netseer`.
+
+1. Stop it: `Ctrl+C` in the terminal running `netseer`, or `pkill -f 'netseer|uvicorn'` if it was started in the background.
+2. Leave the directory: `cd ~`
+3. Delete the project (venv, Python deps, samples, and source):
+
+```bash
+rm -rf /path/to/netseer
+```
+
+That is a full uninstall of the app.
+
+**Optional — uv** (only if you installed uv for NetSeer and do not use it for anything else):
+
+```bash
+uv cache clean
+rm -rf ~/.local/bin/uv ~/.local/bin/uvx ~/.local/share/uv
+```
+
+**Optional — browser leftovers:** in the browser that opened http://127.0.0.1:47331, clear site data for that origin, or DevTools → Application → Local Storage and remove `netseer.deviceMeta.v1`, `netseer.maps.v2`, and `netseer.hiddenSamples`.
+
+**Do not** `apt remove python3 git curl` unless you want those tools gone from the whole machine. They are general Debian packages, not NetSeer-only.
+
 ## Quick reference
 
 | Item | Value |
@@ -260,4 +312,5 @@ Maps and field edits live in **this browser’s** `localStorage` (`netseer.devic
 | Default URL | http://127.0.0.1:47331 |
 | Default bind | `0.0.0.0:47331` |
 | Samples | `src/surveymap/data/` |
-| UI | `web/` |
+| Update | `git pull origin main` then `uv sync --group dev` and restart `netseer` |
+| Uninstall | Stop `netseer`, then `rm -rf` the clone directory |
