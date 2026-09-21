@@ -9,6 +9,8 @@ from scapy.all import (  # type: ignore[import-untyped]
     DHCP,
     DNS,
     IP,
+    LLC,
+    STP,
     TCP,
     UDP,
     Dot1Q,
@@ -129,12 +131,21 @@ def _radiotap_rf(pkt: Any) -> tuple[float | None, float | None]:
     return signal, freq
 
 
+def _fc_bits(dot11: Any) -> tuple[bool, bool]:
+    try:
+        flags = int(getattr(dot11, "FCfield", 0))
+    except (TypeError, ValueError):
+        flags = 0
+    return bool(flags & 0x1), bool(flags & 0x2)
+
+
 def _dot11_addrs(dot11: Any) -> tuple[str | None, str | None, str | None]:
-    to_ds = bool(int(getattr(dot11, "FCfield", 0)) & 0x1)
-    from_ds = bool(int(getattr(dot11, "FCfield", 0)) & 0x2)
+    to_ds, from_ds = _fc_bits(dot11)
     addr1 = getattr(dot11, "addr1", None)
     addr2 = getattr(dot11, "addr2", None)
     addr3 = getattr(dot11, "addr3", None)
+    if to_ds and from_ds:
+        return addr2, addr1, addr1
     if to_ds and not from_ds:
         bssid, sta = addr1, addr2
     elif from_ds and not to_ds:
@@ -146,10 +157,12 @@ def _dot11_addrs(dot11: Any) -> tuple[str | None, str | None, str | None]:
 
 def _dot11_address_roles(dot11: Any) -> dict[str, str | None]:
     """Map 802.11 address fields to TX/TA, RX, DA, and RA. Omit anything not in the frame."""
-    to_ds = bool(int(getattr(dot11, "FCfield", 0)) & 0x1)
+    to_ds, from_ds = _fc_bits(dot11)
     addr1 = getattr(dot11, "addr1", None)
     addr2 = getattr(dot11, "addr2", None)
     addr3 = getattr(dot11, "addr3", None)
+    if to_ds and from_ds:
+        return {"tx": addr2, "rx": addr1, "da": addr3, "ra": addr1}
     da = addr3 if to_ds else addr1
     return {
         "tx": addr2,
@@ -382,6 +395,36 @@ def _handle_packet(builder: GraphBuilder, pkt: Any) -> None:
             builder.observe_routing(dns_id, services=["dns"])
 
     _try_ospf(builder, pkt, src_id)
+    _try_stp(builder, pkt, src_mac)
+
+
+def _try_stp(builder: GraphBuilder, pkt: Any, src_mac: str | None) -> None:
+    dst = ""
+    if pkt.haslayer(Ether):
+        dst = str(pkt[Ether].dst or "").lower()
+    is_stp = pkt.haslayer(STP)
+    if not is_stp and pkt.haslayer(LLC):
+        is_stp = int(getattr(pkt[LLC], "dsap", 0) or 0) == 0x42
+    if not is_stp and dst in {"01:80:c2:00:00:00", "01:80:c2:00:00:00"}:
+        is_stp = True
+    if not is_stp:
+        return
+    node_id = builder.observe_mac(src_mac)
+    if not node_id:
+        return
+    info: dict[str, Any] = {}
+    if pkt.haslayer(STP):
+        stp = pkt[STP]
+        root = getattr(stp, "rootmac", None) or getattr(stp, "rootid", None)
+        bridge = getattr(stp, "bridgemac", None) or getattr(stp, "bridgeid", None)
+        if root:
+            info["root"] = str(root)
+        if bridge:
+            info["bridge_id"] = str(bridge)
+        port = getattr(stp, "portid", None)
+        if port is not None:
+            info["port_id"] = str(port)
+    builder.observe_stp(node_id, **info)
 
 
 def _handle_dot11(builder: GraphBuilder, pkt: Any) -> None:
@@ -390,6 +433,13 @@ def _handle_dot11(builder: GraphBuilder, pkt: Any) -> None:
     for role, mac in roles.items():
         if mac:
             builder.observe_mac(mac, wireless=True, mac_roles=(role,))
+    to_ds, from_ds = _fc_bits(dot11)
+    if to_ds and from_ds:
+        ta = getattr(dot11, "addr2", None)
+        ra = getattr(dot11, "addr1", None)
+        elements = _walk_elements(pkt)
+        builder.add_wds(ta, ra, ssid=_decode_ssid(elements))
+        return
     bssid, sta, _ = _dot11_addrs(dot11)
     signal, freq = _radiotap_rf(pkt)
     elements = _walk_elements(pkt)

@@ -470,12 +470,19 @@ class GraphBuilder:
         incoming_ports = extra.pop("ports", None) or []
         incoming_services = extra.pop("services", None) or []
         single_service = extra.pop("service", None)
+        incoming_vias = extra.pop("vias", None) or []
+        single_via = extra.get("via")
+        if single_via:
+            incoming_vias = list(incoming_vias) + [single_via]
         if single_service:
             incoming_services = list(incoming_services) + [single_service]
         rec["ports"] = _merge_port_records(rec.get("ports") or [], incoming_ports)
         rec["extra"]["ports"] = rec["ports"]
         _merge_unique(rec["services"], incoming_services)
         rec["extra"]["services"] = rec["services"]
+        if incoming_vias:
+            rec["extra"].setdefault("vias", [])
+            _merge_unique(rec["extra"]["vias"], incoming_vias)
         if extra:
             rec["extra"].update(extra)
         rec["label"] = _link_service_label(rec, rec["label"] or label or kind)
@@ -569,8 +576,6 @@ class GraphBuilder:
                 directed=True,
                 extra=cs_extra,
             )
-        self.observe_vlan(vlan, src)
-        self.observe_vlan(vlan, dst)
 
     def add_wireless_link(
         self,
@@ -599,6 +604,114 @@ class GraphBuilder:
                 medium="wireless",
                 extra={"associated": associated},
             )
+
+    def observe_stp(self, node_id: str, **info: Any) -> None:
+        rec = self._device(node_id)
+        rec["extra"]["stp"] = True
+        for key, value in info.items():
+            if value in (None, "", [], {}):
+                continue
+            rec["extra"][f"stp_{key}"] = value
+        self.add_role(node_id, "bridge")
+
+    def add_wds(self, mac_a: str | None, mac_b: str | None, ssid: str | None = None) -> None:
+        """802.11 four-address WDS / wireless bridge between two APs."""
+        left = self.observe_mac(mac_a, wireless=True)
+        right = self.observe_mac(mac_b, wireless=True)
+        if not left or not right or left == right:
+            return
+        self.add_role(left, "ap")
+        self.add_role(right, "ap")
+        self.add_role(left, "bridge")
+        self.add_role(right, "bridge")
+        extra: dict[str, Any] = {"bridge_kind": "wds", "vias": [left, right]}
+        if ssid:
+            extra["ssid"] = ssid
+        self.add_attachment(left, right, mechanism="wds", label="WDS", extra=extra)
+
+    def add_attachment(
+        self,
+        source: str,
+        target: str,
+        *,
+        mechanism: str,
+        via: str | None = None,
+        label: str | None = None,
+        extra: dict[str, Any] | None = None,
+        vlans: list[int] | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {"bridge_kind": mechanism}
+        if extra:
+            payload.update(extra)
+        if via:
+            payload.setdefault("vias", [])
+            if via not in payload["vias"]:
+                payload["vias"].append(via)
+            payload["via"] = via
+        pretty = label or {
+            "wds": "WDS",
+            "stp": "STP bridge",
+            "repeater": "Repeater",
+            "bridge-port": "Bridge",
+            "spanning-host": "Attachment",
+        }.get(mechanism, "Attachment")
+        medium = "wireless" if mechanism == "wds" else "bridged"
+        self._link(
+            source,
+            target,
+            kind="bridge",
+            label=pretty,
+            medium=medium,
+            vlans=vlans,
+            extra=payload,
+        )
+
+    def _infer_attachments(self) -> None:
+        """Join distinct networks only when a device, STP, WDS, or bridge port spans them."""
+        for rec in self.devices.values():
+            node_id = rec["id"]
+            vlans = [int(v) for v in rec.get("vlans") or [] if v is not None]
+            stp = bool(rec.get("extra", {}).get("stp") or rec.get("extra", {}).get("bridge_ports"))
+            mechanism = "stp" if stp else "spanning-host"
+            label = "STP bridge" if stp else "Attachment"
+            if len(vlans) >= 2:
+                self.add_role(node_id, "bridge")
+                for i, left in enumerate(vlans):
+                    for right in vlans[i + 1 :]:
+                        self.add_attachment(
+                            vlan_id(left),
+                            vlan_id(right),
+                            mechanism=mechanism,
+                            via=node_id,
+                            label=label,
+                            vlans=[left, right],
+                            extra={"networks": [f"VLAN {left}", f"VLAN {right}"]},
+                        )
+            member_nets = [
+                net_s
+                for net_s, srec in self.subnets.items()
+                if node_id in (srec.get("members") or [])
+            ]
+            v4 = [n for n in member_nets if ":" not in n]
+            v6 = [n for n in member_nets if ":" in n]
+            for group in (v4, v6):
+                if len(group) < 2:
+                    continue
+                self.add_role(node_id, "bridge")
+                for i, left in enumerate(group):
+                    for right in group[i + 1 :]:
+                        self.add_attachment(
+                            subnet_id(left),
+                            subnet_id(right),
+                            mechanism=mechanism,
+                            via=node_id,
+                            label=label,
+                            extra={"networks": [left, right]},
+                        )
+            ssids = [s for s in rec.get("ssids") or [] if s]
+            if len(ssids) >= 2:
+                self.add_role(node_id, "bridge")
+                rec["extra"]["repeater_ssids"] = ssids
 
     def add_ap(
         self,
@@ -643,6 +756,8 @@ class GraphBuilder:
             if rec:
                 rec["inferred_type"] = infer_display_name(rec, l2_degree.get(rec["id"], 0))
                 rec["label"] = rec["inferred_type"]
+
+        self._infer_attachments()
 
         nodes: list[Node] = []
         for rec in self.devices.values():

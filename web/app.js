@@ -17,6 +17,7 @@ const state = {
     wireless: true,
     vlan: true,
     subnet: true,
+    bridge: true,
   },
 };
 
@@ -62,12 +63,126 @@ function getDeviceMeta(nodeId) {
 function setDeviceMeta(nodeId, patch) {
   const all = allDeviceMeta();
   const key = metaStorageKey(nodeId);
-  all[key] = { ...all[key], ...patch };
+  const prev = all[key] || {};
+  const next = { ...prev, ...patch };
+  if (patch.fields && prev.fields) {
+    next.fields = { ...prev.fields, ...patch.fields };
+  }
+  all[key] = next;
   localStorage.setItem(META_KEY, JSON.stringify(all));
 }
 
+function clearFieldOverride(nodeId, fieldKey) {
+  const all = allDeviceMeta();
+  const key = metaStorageKey(nodeId);
+  const prev = all[key] || {};
+  const fields = { ...(prev.fields || {}) };
+  delete fields[fieldKey];
+  all[key] = { ...prev, fields };
+  localStorage.setItem(META_KEY, JSON.stringify(all));
+}
+
+const LIST_FIELDS = new Set([
+  "mac_tx",
+  "mac_rx",
+  "mac_da",
+  "mac_ra",
+  "macs",
+  "ips",
+  "ssids",
+  "encryption",
+  "roles",
+  "services",
+]);
+const INT_LIST_FIELDS = new Set(["vlans", "channels"]);
+const FLOAT_LIST_FIELDS = new Set(["frequencies_mhz"]);
+const JSON_FIELDS = new Set(["routing", "extra", "ports", "gps"]);
+const MAP_STYLE_KEYS = new Set(["kind", "medium", "inferred_type"]);
+const SKIP_DIALOG_KEYS = new Set(["label", "caption", "notes"]);
+const READONLY_KEYS = new Set(["id"]);
+
+function parseFieldValue(key, text) {
+  const raw = String(text ?? "").trim();
+  if (key.startsWith("link.")) return raw;
+  if (!raw || raw === "—" || raw === "not present") {
+    if (LIST_FIELDS.has(key) || INT_LIST_FIELDS.has(key) || FLOAT_LIST_FIELDS.has(key)) return [];
+    if (key === "gps") return null;
+    if (JSON_FIELDS.has(key)) return key === "ports" ? [] : {};
+    if (key.startsWith("signal")) return null;
+    return "";
+  }
+  if (LIST_FIELDS.has(key)) {
+    return raw.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
+  }
+  if (INT_LIST_FIELDS.has(key)) {
+    return raw.split(/[,;\n]+/).map((s) => parseInt(s, 10)).filter((n) => !Number.isNaN(n));
+  }
+  if (FLOAT_LIST_FIELDS.has(key)) {
+    return raw.split(/[,;\n]+/).map((s) => parseFloat(s)).filter((n) => !Number.isNaN(n));
+  }
+  if (key.startsWith("signal") || key === "signal_dbm") {
+    const n = parseFloat(raw);
+    return Number.isNaN(n) ? null : n;
+  }
+  if (key === "gps") {
+    const m = raw.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)(?:\s*,\s*(?:alt\s*)?(-?\d+(?:\.\d+)?))?/i);
+    if (!m) return raw;
+    return { lat: parseFloat(m[1]), lon: parseFloat(m[2]), alt: m[3] != null ? parseFloat(m[3]) : null };
+  }
+  if (JSON_FIELDS.has(key) || key.startsWith("extra.") || key.startsWith("routing.")) {
+    if (raw.startsWith("{") || raw.startsWith("[")) {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    }
+    if (key === "ports") {
+      return raw.split(/[\n;]+/).map((s) => s.trim()).filter(Boolean).map((display) => ({ display }));
+    }
+  }
+  return raw;
+}
+
+function overlayNode(node) {
+  if (!node) return node;
+  const meta = getDeviceMeta(node.id);
+  const fields = meta.fields || {};
+  const extra = { ...((node.extra && typeof node.extra === "object" && !Array.isArray(node.extra) && node.extra) || {}) };
+  const routing = { ...((node.routing && typeof node.routing === "object" && !Array.isArray(node.routing) && node.routing) || {}) };
+  const out = { ...node, extra, routing };
+  for (const [key, value] of Object.entries(fields)) {
+    if (key.startsWith("extra.")) extra[key.slice(6)] = value;
+    else if (key.startsWith("routing.")) routing[key.slice(8)] = value;
+    else out[key] = value;
+  }
+  if (out.extra && typeof out.extra === "string") {
+    try {
+      out.extra = JSON.parse(out.extra);
+    } catch {
+      out.extra = { ...extra, note: out.extra };
+    }
+  }
+  if (!out.extra || typeof out.extra !== "object" || Array.isArray(out.extra)) out.extra = { ...extra };
+  const name = (meta.name || "").trim();
+  if (name) out.label = name;
+  else if (out.inferred_type) out.label = out.inferred_type;
+  const extraLabel = (meta.extra || "").trim();
+  if (extraLabel) out.caption = extraLabel;
+  const notes = (meta.notes || "").trim();
+  if (notes) out.notes = notes;
+  const edited = [];
+  if (name) edited.push("label");
+  if (extraLabel) edited.push("caption");
+  if (notes) edited.push("notes");
+  edited.push(...Object.keys(fields));
+  if (edited.length) out.extra = { ...out.extra, user_edited_fields: [...new Set(edited)] };
+  return out;
+}
+
 function inferredName(node) {
-  return node.inferred_type || node.label || "Host";
+  const live = overlayNode(node);
+  return live.inferred_type || live.label || "Host";
 }
 
 function displayName(node) {
@@ -89,16 +204,7 @@ function macRoleValue(addrs) {
 }
 
 function graphWithUserFields() {
-  const nodes = (state.graph?.nodes || []).map((n) => {
-    const meta = getDeviceMeta(n.id);
-    return {
-      ...n,
-      label: displayName(n),
-      inferred_type: inferredName(n),
-      caption: (meta.extra || "").trim(),
-      notes: (meta.notes || "").trim(),
-    };
-  });
+  const nodes = (state.graph?.nodes || []).map((n) => overlayNode(n));
   return { ...state.graph, title: state.title, nodes };
 }
 
@@ -132,6 +238,7 @@ function colorFor(node) {
 }
 
 function edgeColor(link) {
+  if (link.kind === "bridge") return "#f472b6";
   if (link.kind === "wireless") return "#fbbf24";
   if (link.kind === "client-server") return "#38bdf8";
   if (link.kind === "l3") return "#86efac";
@@ -141,16 +248,19 @@ function edgeColor(link) {
 }
 
 function toElements(graph) {
-  const nodes = graph.nodes.map((n) => ({
-    data: {
-      id: n.id,
-      label: nodeLabel(n),
-      kind: n.kind,
-      medium: n.medium,
-      color: colorFor(n),
-      raw: n,
-    },
-  }));
+  const nodes = graph.nodes.map((raw) => {
+    const n = overlayNode(raw);
+    return {
+      data: {
+        id: n.id,
+        label: nodeLabel(n),
+        kind: n.kind,
+        medium: n.medium,
+        color: colorFor(n),
+        raw: n,
+      },
+    };
+  });
   const edges = graph.links
     .filter((l) => state.filters[l.kind] !== false)
     .map((l) => ({
@@ -158,10 +268,10 @@ function toElements(graph) {
         id: l.id,
         source: l.source,
         target: l.target,
-        label: edgeLabel(l),
+        label: l.kind === "bridge" ? l.label || "Attachment" : edgeLabel(l),
         kind: l.kind,
         color: edgeColor(l),
-        dashed: l.kind === "wireless" || l.kind === "l3" || l.kind === "vlan" || l.kind === "subnet",
+        dashed: l.kind === "wireless" || l.kind === "l3" || l.kind === "vlan" || l.kind === "subnet" || l.kind === "bridge",
         raw: l,
       },
     }));
@@ -229,6 +339,18 @@ function renderMap() {
         style: { "line-style": "dashed" },
       },
       {
+        selector: 'edge[kind = "bridge"]',
+        style: {
+          width: 3.2,
+          "line-style": "dashed",
+          "line-dash-pattern": [2, 8],
+          "source-arrow-shape": "diamond",
+          "target-arrow-shape": "diamond",
+          "source-arrow-color": "data(color)",
+          "target-arrow-color": "data(color)",
+        },
+      },
+      {
         selector: 'edge[kind = "client-server"]',
         style: { "target-arrow-shape": "triangle", width: 2.5 },
       },
@@ -268,8 +390,13 @@ function inspect(kind, obj) {
   empty.classList.add("hidden");
   body.classList.remove("hidden");
   if (kind === "node") {
+    obj = overlayNode(obj);
     const portList = (obj.ports || []).map((p) => p.display || `${p.proto}/${p.port}`).filter(Boolean);
-    const gps = obj.gps ? `${obj.gps.lat.toFixed(5)}, ${obj.gps.lon.toFixed(5)}` : "—";
+    let gps = "—";
+    if (obj.gps && obj.gps.lat != null && obj.gps.lon != null) {
+      gps = `${Number(obj.gps.lat).toFixed(5)}, ${Number(obj.gps.lon).toFixed(5)}`;
+    }
+    const edited = (obj.extra && obj.extra.user_edited_fields) || [];
     body.innerHTML = `
       <h2>${escapeHtml(displayName(obj))}</h2>
       <dl class="kv">
@@ -290,6 +417,7 @@ function inspect(kind, obj) {
         <dt>Encrypt</dt><dd>${escapeHtml((obj.encryption || []).join(", ") || "—")}</dd>
         <dt>VLANs</dt><dd>${escapeHtml((obj.vlans || []).join(", ") || "—")}</dd>
         <dt>GPS</dt><dd>${escapeHtml(gps)}</dd>
+        ${edited.length ? `<dt>Edits</dt><dd>User-edited: ${escapeHtml(edited.join(", "))}</dd>` : ""}
       </dl>
       <h2>Ports &amp; services</h2>
       ${chips(obj.services)}
@@ -302,10 +430,14 @@ function inspect(kind, obj) {
       if (p.sport != null && p.dport != null) bits.push(`src ${p.sport} → dst ${p.dport}`);
       return bits.filter(Boolean).join(" · ");
     });
+    const extra = obj.extra || {};
     body.innerHTML = `
       <h2>${escapeHtml(obj.label || obj.kind)}</h2>
       <dl class="kv">
         <dt>Kind</dt><dd>${escapeHtml(obj.kind)} · ${escapeHtml(obj.medium)}</dd>
+        ${obj.kind === "bridge" ? `<dt>Link type</dt><dd>${escapeHtml(extra.bridge_kind || obj.label || "attachment")}</dd>` : ""}
+        ${extra.vias && extra.vias.length ? `<dt>Via</dt><dd>${escapeHtml(extra.vias.join(", "))}</dd>` : ""}
+        ${extra.networks && extra.networks.length ? `<dt>Networks</dt><dd>${escapeHtml(extra.networks.join(" · "))}</dd>` : ""}
         <dt>From</dt><dd>${escapeHtml(obj.source)}</dd>
         <dt>To</dt><dd>${escapeHtml(obj.target)}</dd>
         <dt>VLANs</dt><dd>${escapeHtml((obj.vlans || []).join(", ") || "—")}</dd>
@@ -592,6 +724,111 @@ function closeDeviceDialog() {
   activeDevice = null;
 }
 
+function stringifyEdit(key, value) {
+  if (value == null || value === "") return "";
+  if (Array.isArray(value)) {
+    if (value.length && typeof value[0] === "object") return JSON.stringify(value, null, 2);
+    return value.join(", ");
+  }
+  if (typeof value === "object") {
+    if ((key === "gps" || value.lat != null) && "lat" in value && "lon" in value) {
+      return value.alt != null ? `${value.lat}, ${value.lon}, alt ${value.alt}` : `${value.lat}, ${value.lon}`;
+    }
+    return JSON.stringify(value, null, 2);
+  }
+  return String(value);
+}
+
+function isFieldEdited(nodeId, key) {
+  const fields = getDeviceMeta(nodeId).fields || {};
+  return Object.prototype.hasOwnProperty.call(fields, key);
+}
+
+function refreshActiveInspect() {
+  if (!activeDevice) return;
+  const live = overlayNode(activeDevice);
+  inspect("node", live);
+  fillLabelEditors(activeDevice);
+  refreshNodeLabel(activeDevice);
+}
+
+function renderDeviceFields(rows, node) {
+  const fields = el("device-fields");
+  fields.innerHTML = "";
+  for (const row of rows) {
+    if (SKIP_DIALOG_KEYS.has(row.key)) continue;
+    const wrap = document.createElement("div");
+    const edited = isFieldEdited(node.id, row.key);
+    const readonly = READONLY_KEYS.has(row.key) || String(row.key).startsWith("link.");
+    wrap.className = `field-row${edited ? " edited" : ""}${readonly ? " readonly" : ""}`;
+    const capture = row.value || "";
+    const current = edited ? stringifyEdit(row.key, getDeviceMeta(node.id).fields[row.key]) : capture;
+    const head = document.createElement("div");
+    head.className = "field-head";
+    const dt = document.createElement("dt");
+    dt.textContent = row.name;
+    const tag = document.createElement("span");
+    tag.className = `origin-tag${edited ? " edited" : ""}`;
+    tag.textContent = readonly ? "From map" : edited ? "Edited" : "Capture";
+    head.append(dt, tag);
+    wrap.appendChild(head);
+    let control;
+    const multiline =
+      JSON_FIELDS.has(row.key) ||
+      (current && current.length > 72) ||
+      String(row.key).startsWith("extra.") ||
+      String(row.key).startsWith("routing.");
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "btn ghost reset-one";
+    reset.textContent = "Reset";
+    reset.disabled = readonly || !edited;
+    if (readonly) {
+      control = document.createElement("dd");
+      control.textContent = current || "—";
+    } else {
+      control = document.createElement(multiline ? "textarea" : "input");
+      if (!multiline) control.type = "text";
+      control.value = current === "—" ? "" : current;
+      control.setAttribute("aria-label", row.name);
+      control.addEventListener("input", () => {
+        const parsed = parseFieldValue(row.key, control.value);
+        setDeviceMeta(node.id, { fields: { [row.key]: parsed } });
+        wrap.classList.add("edited");
+        tag.textContent = "Edited";
+        tag.classList.add("edited");
+        reset.disabled = false;
+        if (row.key === "inferred_type" && !(getDeviceMeta(node.id).name || "").trim()) {
+          el("device-name").value = String(control.value || inferredName(node));
+          el("device-inferred").textContent = String(control.value || "Host");
+        }
+        refreshActiveInspect();
+        if (MAP_STYLE_KEYS.has(row.key) && state.graph) renderMap();
+      });
+    }
+    wrap.appendChild(control);
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "btn ghost copy-one";
+    copy.textContent = "Copy";
+    copy.addEventListener("click", () => copyText(`${row.name}: ${control.value || control.textContent || "—"}`));
+    wrap.appendChild(copy);
+    reset.addEventListener("click", () => {
+      if (readonly) return;
+      clearFieldOverride(node.id, row.key);
+      control.value = capture === "—" ? "" : capture;
+      wrap.classList.remove("edited");
+      tag.textContent = "Capture";
+      tag.classList.remove("edited");
+      reset.disabled = true;
+      refreshActiveInspect();
+      if (MAP_STYLE_KEYS.has(row.key) && state.graph) renderMap();
+    });
+    wrap.appendChild(reset);
+    fields.appendChild(wrap);
+  }
+}
+
 async function openDeviceDialog(node) {
   if (!state.graph || !node) return;
   activeDevice = node;
@@ -603,28 +840,11 @@ async function openDeviceDialog(node) {
       await fetch("/api/device/properties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...graphWithUserFields(), node_id: node.id }),
+        body: JSON.stringify({ ...state.graph, title: state.title, node_id: node.id }),
       })
     );
     activeDevice = { ...node, properties: payload.properties, text: payload.properties };
-    const fields = el("device-fields");
-    fields.innerHTML = "";
-    const skip = new Set(["label", "caption", "notes", "inferred_type"]);
-    for (const row of payload.properties) {
-      if (skip.has(row.key)) continue;
-      const wrap = document.createElement("div");
-      wrap.className = "field-row";
-      const value = row.value || "—";
-      wrap.innerHTML = `<dt>${escapeHtml(row.name)}</dt><dd></dd>`;
-      wrap.querySelector("dd").textContent = value;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "btn ghost copy-one";
-      btn.textContent = "Copy";
-      btn.addEventListener("click", () => copyText(`${row.name}: ${value}`));
-      wrap.appendChild(btn);
-      fields.appendChild(wrap);
-    }
+    renderDeviceFields(payload.properties, node);
   } catch (err) {
     el("device-fields").innerHTML = `<p class="hint">${escapeHtml(err.message || String(err))}</p>`;
   }

@@ -22,6 +22,7 @@ EDGE_STYLE = {
     "vlan": "endArrow=none;strokeColor=#C4B5FD;strokeWidth=1;dashed=1;",
     "subnet": "endArrow=none;strokeColor=#9CA3AF;strokeWidth=1;dashed=1;",
     "client-server": "endArrow=block;strokeColor=#38BDF8;strokeWidth=2;",
+    "bridge": "endArrow=diamond;startArrow=diamond;strokeColor=#F472B6;strokeWidth=3;dashed=1;dashPattern=1 6;",
 }
 
 
@@ -48,15 +49,18 @@ def export_drawio(graph: SurveyGraph, title: str = "NetSeer map") -> str:
         )
     for link in graph.links:
         style = EDGE_STYLE.get(link.kind, EDGE_STYLE["l2"])
-        label = escape(link.label or link.kind)
-        if link.ports:
-            displays = []
-            for item in link.ports:
-                text = item.get("display")
-                if text and text not in displays:
-                    displays.append(str(text))
-            if displays:
-                label = escape(", ".join(displays[:4]))
+        if link.kind == "bridge":
+            label = escape(link.label or "Attachment")
+        else:
+            label = escape(link.label or link.kind)
+            if link.ports:
+                displays = []
+                for item in link.ports:
+                    text = item.get("display")
+                    if text and text not in displays:
+                        displays.append(str(text))
+                if displays:
+                    label = escape(", ".join(displays[:4]))
         cells.append(
             f'        <mxCell id="{escape(link.id)}" value="{label}" style="{style}" edge="1" parent="1" '
             f'source="{escape(link.source)}" target="{escape(link.target)}">'

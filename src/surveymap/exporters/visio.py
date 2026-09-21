@@ -23,7 +23,27 @@ def _shape_color(kind: str, medium: str) -> tuple[str, str]:
     return "#5EEAD4", "#042F2E"
 
 
+def _link_color(kind: str, medium: str) -> str:
+    if kind == "bridge":
+        return "#F472B6"
+    if kind == "wireless" or medium == "wireless":
+        return "#FBBF24"
+    if kind == "l2":
+        return "#5EEAD4"
+    if kind == "client-server":
+        return "#38BDF8"
+    if kind == "vlan":
+        return "#C4B5FD"
+    return "#86EFAC"
+
+
 def _link_caption(link) -> str:
+    if getattr(link, "kind", "") == "bridge":
+        mechanism = (getattr(link, "extra", None) or {}).get("bridge_kind")
+        tag = {"wds": "WDS", "stp": "STP bridge", "spanning-host": "Attachment"}.get(
+            str(mechanism or ""), link.label or "Attachment"
+        )
+        return tag
     displays = []
     for item in getattr(link, "ports", None) or []:
         text = item.get("display")
@@ -81,7 +101,9 @@ def export_vdx(graph: SurveyGraph, title: str = "NetSeer map") -> str:
         next_id += 1
         sx, sy = positions[link.source]
         tx, ty = positions[link.target]
-        color = "#FBBF24" if link.kind == "wireless" else "#5EEAD4" if link.kind == "l2" else "#86EFAC"
+        color = _link_color(link.kind, link.medium)
+        dashed = "2" if link.kind in {"wireless", "l3", "vlan", "bridge"} else "1"
+        weight = "0.018" if link.kind == "bridge" else "0.012"
         shapes.append(
             f'''    <Shape ID="{sid}" Type="Shape" LineStyle="1">
       <XForm1D>
@@ -91,9 +113,9 @@ def export_vdx(graph: SurveyGraph, title: str = "NetSeer map") -> str:
         <EndY Unit="IN">{(900 - ty) / 96.0:.3f}</EndY>
       </XForm1D>
       <Line>
-        <LineWeight>0.012</LineWeight>
+        <LineWeight>{weight}</LineWeight>
         <LineColor>{color}</LineColor>
-        <LinePattern>{"2" if link.kind in {"wireless", "l3", "vlan"} else "1"}</LinePattern>
+        <LinePattern>{dashed}</LinePattern>
       </Line>
       <Text>{escape(_link_caption(link))}</Text>
     </Shape>'''
@@ -176,7 +198,8 @@ def export_vsdx(graph: SurveyGraph, title: str = "NetSeer map") -> bytes:
         next_id += 1
         sx, sy = positions[link.source]
         tx, ty = positions[link.target]
-        color = "FBBF24" if link.medium == "wireless" or link.kind == "wireless" else "5EEAD4"
+        color = _link_color(link.kind, link.medium).lstrip("#")
+        weight = "0.018" if link.kind == "bridge" else "0.012"
         shapes_xml.append(
             f'''<Shape ID="{sid}" NameU="Dynamic connector" Type="Shape" LineStyle="0" FillStyle="0">
   <Cell N="BeginX" V="{sx / 96.0:.4f}"/>
@@ -184,7 +207,7 @@ def export_vsdx(graph: SurveyGraph, title: str = "NetSeer map") -> bytes:
   <Cell N="EndX" V="{tx / 96.0:.4f}"/>
   <Cell N="EndY" V="{(900 - ty) / 96.0:.4f}"/>
   <Cell N="LineColor" V="#{color}"/>
-  <Cell N="LineWeight" V="0.012"/>
+  <Cell N="LineWeight" V="{weight}"/>
   <Cell N="EndArrow" V="0"/>
   <Text>{escape(_link_caption(link))}</Text>
 </Shape>'''

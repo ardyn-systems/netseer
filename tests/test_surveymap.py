@@ -148,6 +148,55 @@ def test_inferred_names_and_export_notes():
     assert "Intranet" in xml
 
 
+def test_bridge_attachments_from_evidence_only():
+    from surveymap.graph import GraphBuilder
+
+    lonely = GraphBuilder()
+    host = lonely.observe_mac("00:11:22:33:44:55")
+    lonely.observe_vlan(10, host)
+    lonely.observe_ip("10.10.10.8", "00:11:22:33:44:55")
+    graph = lonely.finalize()
+    assert not any(link.kind == "bridge" for link in graph.links)
+
+    spanned = GraphBuilder()
+    gw = spanned.observe_mac("00:1a:2f:aa:00:01")
+    spanned.observe_vlan(10, gw)
+    spanned.observe_vlan(20, gw)
+    spanned.observe_stp(gw, root="00:1a:2f:aa:00:01")
+    graph = spanned.finalize()
+    bridges = [link for link in graph.links if link.kind == "bridge"]
+    assert len(bridges) == 1
+    assert {bridges[0].source, bridges[0].target} == {"vlan:10", "vlan:20"}
+    assert bridges[0].label == "STP bridge"
+    assert "stp" in (bridges[0].extra or {}).get("bridge_kind", "")
+
+    if not (DATA_DIR / "office-lan.pcap").exists():
+        write_all(DATA_DIR)
+    office = ingest_files(files_for_sample("office-lan"))
+    office_bridges = [link for link in office.links if link.kind == "bridge"]
+    assert office_bridges
+    vlan_bridge = next(link for link in office_bridges if {link.source, link.target} == {"vlan:10", "vlan:20"})
+    assert vlan_bridge.extra.get("vias") == ["mac:00:1a:2f:aa:00:01"]
+    assert vlan_bridge.label == "STP bridge"
+    xml = export_drawio(office)
+    assert "STP bridge" in xml
+    vdx = export_vdx(office)
+    assert "bridge" in vdx.lower() or "Attachment" in vdx or "STP" in vdx
+    gw_node = next(n for n in office.nodes if "10.10.10.1" in n.ips)
+    gw_node.vendor = "Edited OUI Co"
+    text = device_plain_text(office, gw_node)
+    assert "Edited OUI Co" in text
+
+    if not (DATA_DIR / "wifi-campus.pcapng").exists():
+        write_all(DATA_DIR)
+    wifi = ingest_files(files_for_sample("wifi-campus"))
+    wds = [link for link in wifi.links if link.kind == "bridge"]
+    assert wds
+    assert any(link.label == "WDS" or (link.extra or {}).get("bridge_kind") == "wds" for link in wds)
+    wifi_xml = export_drawio(wifi)
+    assert "WDS" in wifi_xml
+
+
 def test_unsupported_and_empty(tmp_path):
     assert sniff_format(b"\xd4\xc3\xb2\xa1", "x.pcap") == "pcap"
     try:

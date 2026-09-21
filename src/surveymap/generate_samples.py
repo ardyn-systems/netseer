@@ -11,6 +11,8 @@ from scapy.all import (  # type: ignore[import-untyped]
     DNS,
     DNSQR,
     IP,
+    LLC,
+    STP,
     TCP,
     UDP,
     Dot1Q,
@@ -162,6 +164,12 @@ def office_lan_packets() -> list:
     # OSPF hello (proto 89) from the gateway.
     ospf = bytes.fromhex("0201002c0a0a0a0100000000000000000000000000000000ffffffffffffffff0a0a0a0100000000")
     pkts.append(Ether(src=GW, dst="01:00:5e:00:00:05") / IP(src="10.10.10.1", dst="224.0.0.5", proto=89) / Raw(load=ospf))
+    # 802.1D STP BPDU from the gateway that spans VLAN 10 and VLAN 20.
+    pkts.append(
+        Ether(src=GW, dst="01:80:c2:00:00:00")
+        / LLC(dsap=0x42, ssap=0x42, ctrl=3)
+        / STP(rootid=1, bridgeid=1, portid=0x8001)
+    )
     return pkts
 
 
@@ -183,6 +191,17 @@ def wifi_packets() -> list:
         / IP(src="10.30.0.44", dst="10.10.20.80")
         / TCP(sport=49321, dport=80, flags="PA")
         / Raw(load=_http_get("intranet.hq.local", "/wifi")),
+        RadioTap(dBm_AntSignal=-40, ChannelFrequency=5180)
+        / Dot11(
+            type=2,
+            subtype=0,
+            FCfield=3,
+            addr1=AP_GUEST,
+            addr2=AP_SECURE,
+            addr3=PHONE,
+            addr4=LAPTOP,
+        )
+        / Raw(load=b"wds-bridge"),
     ]
     return pkts
 
