@@ -26,7 +26,9 @@ from surveymap.models import Link, Node, SurveyGraph
 
 FIELD_ORDER = [
     ("id", "ID"),
-    ("label", "Label"),
+    ("label", "Map name"),
+    ("inferred_type", "Inferred type"),
+    ("caption", "On-map extra"),
     ("kind", "Kind"),
     ("medium", "Medium"),
     ("roles", "Roles (server/client)"),
@@ -50,6 +52,7 @@ FIELD_ORDER = [
     ("gps", "GPS"),
     ("routing", "Routing"),
     ("extra", "Other extracted data"),
+    ("notes", "Notes"),
 ]
 
 
@@ -107,6 +110,8 @@ def device_properties(graph: SurveyGraph, node: Node) -> list[dict[str, str]]:
         seen.add(key)
         value = raw.get(key)
         if key == "macs" and has_mac_roles:
+            continue
+        if key in {"notes", "caption"} and not _stringify(value):
             continue
         if key in {"mac_tx", "mac_rx", "mac_da", "mac_ra"}:
             rows.append({"name": title, "key": key, "value": _stringify(value) or "not present"})

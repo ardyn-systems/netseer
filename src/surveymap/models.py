@@ -48,6 +48,9 @@ class Node:
     ports: list[dict[str, Any]] = field(default_factory=list)
     routing: dict[str, Any] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
+    inferred_type: str = "Host"
+    caption: str = ""
+    notes: str = ""
 
 
 @dataclass

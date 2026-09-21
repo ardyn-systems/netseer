@@ -106,6 +106,43 @@ def mac_role_lines(node: Any, *, limit: int | None = None, empty: str | None = N
     return lines
 
 
+def infer_display_name(rec: dict[str, Any], l2_degree: int = 0) -> str:
+    """Short device-type name from the strongest capture evidence."""
+    kind = rec.get("kind") or "host"
+    if kind == "subnet":
+        return rec.get("label") or "Subnet"
+    if kind == "vlan":
+        return rec.get("label") or "VLAN"
+    roles = rec.get("roles") or []
+    services = rec.get("services") or []
+    routing = rec.get("routing") or {}
+    ports = rec.get("ports") or []
+    medium = rec.get("medium") or "wired"
+    if kind == "ap" or "ap" in roles:
+        return "Access point"
+    if "station" in roles or (medium == "wireless" and kind not in {"ap", "vlan", "subnet"}):
+        return "Wireless client"
+    if routing.get("routing_protocol") or routing.get("ospf_router_id") or "ospf" in services:
+        return "Router"
+    if l2_degree >= 4 and kind in {"host", "switch"}:
+        return "Switch"
+    if kind == "gateway" or "gateway" in roles or routing.get("role") == "default-gateway":
+        return "Gateway"
+    listen = any(isinstance(p, dict) and p.get("role") == "listen" for p in ports)
+    if kind == "server" or "server" in roles or listen:
+        return "Server"
+    return "Host"
+
+
+def device_map_label(node: Any) -> str:
+    """Clean on-map name: inferred/override type, plus optional user caption."""
+    name = (getattr(node, "label", None) or getattr(node, "inferred_type", None) or "Host").strip()
+    caption = (getattr(node, "caption", None) or "").strip()
+    if caption:
+        return f"{name}\n{caption}"
+    return name
+
+
 class GraphBuilder:
     """Accumulate L2/L3/RF observations into a survey graph."""
 
@@ -591,25 +628,31 @@ class GraphBuilder:
         return node_id
 
     def finalize(self) -> SurveyGraph:
+        l2_degree: dict[str, int] = {}
+        for link in self.links.values():
+            if link.get("kind") != "l2":
+                continue
+            l2_degree[link["source"]] = l2_degree.get(link["source"], 0) + 1
+            l2_degree[link["target"]] = l2_degree.get(link["target"], 0) + 1
         for ip, node_id in list(self.ip_to_device.items()):
             prefix = self.netmasks.get(ip)
             self.observe_subnet(ip, prefix)
             rec = self.devices.get(node_id)
             if rec and rec["macs"]:
                 rec["vendor"] = manufacturers_for_macs(rec["macs"])
-            if rec and rec["label"] in rec["macs"] and rec["ips"]:
-                rec["label"] = rec["ips"][0]
-            if rec and rec["ssids"] and rec["kind"] == "ap":
-                rec["label"] = rec["ssids"][0]
+            if rec:
+                rec["inferred_type"] = infer_display_name(rec, l2_degree.get(rec["id"], 0))
+                rec["label"] = rec["inferred_type"]
 
         nodes: list[Node] = []
         for rec in self.devices.values():
             gps = rec["gps"]
+            inferred = rec.get("inferred_type") or infer_display_name(rec, l2_degree.get(rec["id"], 0))
             nodes.append(
                 Node(
                     id=rec["id"],
                     kind=rec["kind"],
-                    label=rec["label"],
+                    label=inferred,
                     medium=rec["medium"],
                     macs=rec["macs"],
                     mac_tx=rec.get("mac_tx") or [],
@@ -632,6 +675,7 @@ class GraphBuilder:
                     ports=rec["ports"],
                     routing=rec["routing"],
                     extra=rec["extra"],
+                    inferred_type=inferred,
                 )
             )
         for net, rec in self.subnets.items():
@@ -642,6 +686,7 @@ class GraphBuilder:
                     label=rec["label"],
                     medium="wired",
                     extra={"members": rec["members"], "prefix": rec["prefix"]},
+                    inferred_type=rec["label"],
                 )
             )
         for vid, rec in self.vlans.items():
@@ -653,6 +698,7 @@ class GraphBuilder:
                     medium="wired",
                     vlans=[vid],
                     extra={"members": rec["members"]},
+                    inferred_type=rec["label"],
                 )
             )
 

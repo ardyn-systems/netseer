@@ -43,6 +43,10 @@
         </section>
         <section>
           <h2>Show</h2>
+          <div class="show-actions">
+            <button id="btn-show-all" class="btn ghost" type="button">Show all</button>
+            <button id="btn-show-none" class="btn ghost" type="button">Show none</button>
+          </div>
           <label class="check"><input type="checkbox" data-filter="l2" checked /> Wired L2</label>
           <label class="check"><input type="checkbox" data-filter="l3" checked /> L3 / IP</label>
           <label class="check"><input type="checkbox" data-filter="client-server" checked /> Ports &amp; services</label>
@@ -103,6 +107,17 @@
           <button id="device-close" class="btn ghost" type="button" aria-label="Close">Close</button>
         </header>
         <p id="copy-toast" class="toast hidden">Copied to clipboard</p>
+        <div class="map-label-edit">
+          <label class="field-label">Map name
+            <input id="device-name" type="text" autocomplete="off" />
+          </label>
+          <label class="field-label">On-map extra
+            <input id="device-extra" type="text" autocomplete="off" placeholder="Lobby AP, 2nd floor, site tag" />
+          </label>
+          <p class="hint map-name-hint">Auto name: <span id="device-inferred">Host</span>
+            <button id="device-reset-name" class="btn ghost" type="button">Use auto name</button>
+          </p>
+        </div>
         <div class="modal-actions">
           <button id="copy-all" class="btn" type="button">Copy all</button>
           <button data-device-export="pdf" class="btn" type="button">PDF</button>
@@ -111,6 +126,10 @@
           <button data-device-export="txt" class="btn ghost" type="button">Plain text</button>
         </div>
         <div id="device-fields" class="device-fields"></div>
+        <div class="device-notes">
+          <label class="field-label" for="device-notes">Your notes</label>
+          <textarea id="device-notes" rows="4" placeholder="Inventory tag, site notes, or anything else to save with this device."></textarea>
+        </div>
       </div>
     </div>
     <script src="/static/app.js"></script>

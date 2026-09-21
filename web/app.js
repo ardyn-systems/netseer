@@ -40,18 +40,47 @@ function nodeCaption(node) {
   return (node.services || []).slice(0, 3).join(" · ");
 }
 
-function macRoleLines(node) {
-  const lines = [];
-  for (const [key, tag] of [
-    ["mac_tx", "TX"],
-    ["mac_rx", "RX"],
-    ["mac_da", "DA"],
-    ["mac_ra", "RA"],
-  ]) {
-    const addrs = node[key] || [];
-    if (addrs.length) lines.push(`${tag} ${addrs.slice(0, 2).join(", ")}`);
+const META_KEY = "netseer.deviceMeta.v1";
+
+function allDeviceMeta() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(META_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
   }
-  return lines;
+}
+
+function metaStorageKey(nodeId) {
+  return `${state.activeId || "map"}::${nodeId}`;
+}
+
+function getDeviceMeta(nodeId) {
+  return allDeviceMeta()[metaStorageKey(nodeId)] || {};
+}
+
+function setDeviceMeta(nodeId, patch) {
+  const all = allDeviceMeta();
+  const key = metaStorageKey(nodeId);
+  all[key] = { ...all[key], ...patch };
+  localStorage.setItem(META_KEY, JSON.stringify(all));
+}
+
+function inferredName(node) {
+  return node.inferred_type || node.label || "Host";
+}
+
+function displayName(node) {
+  const meta = getDeviceMeta(node.id);
+  const name = (meta.name || "").trim();
+  return name || inferredName(node);
+}
+
+function nodeLabel(node) {
+  const meta = getDeviceMeta(node.id);
+  const name = displayName(node);
+  const extra = (meta.extra || "").trim();
+  return extra ? `${name}\n${extra}` : name;
 }
 
 function macRoleValue(addrs) {
@@ -59,16 +88,28 @@ function macRoleValue(addrs) {
   return "not present";
 }
 
-function nodeLabel(node) {
-  const lines = [node.label];
-  if (node.ips && node.ips[0] && node.ips[0] !== node.label) lines.push(node.ips[0]);
-  const roles = macRoleLines(node);
-  if (roles.length) lines.push(...roles.slice(0, 3));
-  else if (node.macs && node.macs[0] && node.macs[0] !== node.label) lines.push(node.macs[0]);
-  if (node.vendor) lines.push(node.vendor);
-  const cap = nodeCaption(node);
-  if (cap) lines.push(cap);
-  return lines.join("\n");
+function graphWithUserFields() {
+  const nodes = (state.graph?.nodes || []).map((n) => {
+    const meta = getDeviceMeta(n.id);
+    return {
+      ...n,
+      label: displayName(n),
+      inferred_type: inferredName(n),
+      caption: (meta.extra || "").trim(),
+      notes: (meta.notes || "").trim(),
+    };
+  });
+  return { ...state.graph, title: state.title, nodes };
+}
+
+function refreshNodeLabel(node) {
+  if (state.cy) {
+    const cyNode = state.cy.getElementById(node.id);
+    if (cyNode && cyNode.length) cyNode.data("label", nodeLabel(node));
+  }
+  if (activeDevice && activeDevice.id === node.id) {
+    el("device-title").textContent = displayName(node);
+  }
 }
 
 function edgeLabel(link) {
@@ -149,20 +190,20 @@ function renderMap() {
           label: "data(label)",
           "text-wrap": "wrap",
           "text-max-width": 140,
-          "font-size": 9,
+          "font-size": 11,
           color: "#e8eef8",
           "text-valign": "center",
           "background-color": "#0f172a",
           "border-width": 2,
           "border-color": "data(color)",
-          width: 78,
-          height: 48,
+          width: 92,
+          height: 42,
           shape: "roundrectangle",
         },
       },
       {
         selector: 'node[kind = "ap"]',
-        style: { shape: "hexagon", width: 72, height: 64 },
+        style: { shape: "hexagon", width: 88, height: 56 },
       },
       {
         selector: 'node[kind = "subnet"], node[kind = "vlan"]',
@@ -230,8 +271,9 @@ function inspect(kind, obj) {
     const portList = (obj.ports || []).map((p) => p.display || `${p.proto}/${p.port}`).filter(Boolean);
     const gps = obj.gps ? `${obj.gps.lat.toFixed(5)}, ${obj.gps.lon.toFixed(5)}` : "—";
     body.innerHTML = `
-      <h2>${escapeHtml(obj.label)}</h2>
+      <h2>${escapeHtml(displayName(obj))}</h2>
       <dl class="kv">
+        <dt>Type</dt><dd>${escapeHtml(inferredName(obj))}</dd>
         <dt>Kind</dt><dd>${escapeHtml(obj.kind)} · ${escapeHtml(obj.medium)}</dd>
         <dt>Roles</dt><dd>${escapeHtml((obj.roles || []).join(", ") || "—")}</dd>
         <dt>TX MAC</dt><dd>${escapeHtml(macRoleValue(obj.mac_tx))}</dd>
@@ -507,7 +549,7 @@ async function exportKind(kind, filename) {
   const res = await fetch(`/api/export/${kind}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...state.graph, title: state.title }),
+    body: JSON.stringify(graphWithUserFields()),
   });
   if (!res.ok) {
     fail(new Error("Export failed"));
@@ -553,7 +595,7 @@ function closeDeviceDialog() {
 async function openDeviceDialog(node) {
   if (!state.graph || !node) return;
   activeDevice = node;
-  el("device-title").textContent = node.label || node.id;
+  fillLabelEditors(node);
   el("device-fields").innerHTML = "<p class='hint'>Loading extracted properties…</p>";
   el("device-modal").classList.remove("hidden");
   try {
@@ -561,13 +603,15 @@ async function openDeviceDialog(node) {
       await fetch("/api/device/properties", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...state.graph, title: state.title, node_id: node.id }),
+        body: JSON.stringify({ ...graphWithUserFields(), node_id: node.id }),
       })
     );
     activeDevice = { ...node, properties: payload.properties, text: payload.properties };
     const fields = el("device-fields");
     fields.innerHTML = "";
+    const skip = new Set(["label", "caption", "notes", "inferred_type"]);
     for (const row of payload.properties) {
+      if (skip.has(row.key)) continue;
       const wrap = document.createElement("div");
       wrap.className = "field-row";
       const value = row.value || "—";
@@ -586,12 +630,35 @@ async function openDeviceDialog(node) {
   }
 }
 
+function fillLabelEditors(node) {
+  const meta = getDeviceMeta(node.id);
+  el("device-title").textContent = displayName(node);
+  el("device-name").value = displayName(node);
+  el("device-extra").value = meta.extra || "";
+  el("device-notes").value = meta.notes || "";
+  el("device-inferred").textContent = inferredName(node);
+}
+
+function saveActiveMeta(patch) {
+  if (!activeDevice) return;
+  setDeviceMeta(activeDevice.id, patch);
+  refreshNodeLabel(activeDevice);
+}
+
+function setAllLayers(on) {
+  document.querySelectorAll("[data-filter]").forEach((box) => {
+    box.checked = on;
+    state.filters[box.dataset.filter] = on;
+  });
+  if (state.graph) renderMap();
+}
+
 async function exportDevice(fmt) {
   if (!state.graph || !activeDevice) return;
   const res = await fetch(`/api/export/device/${fmt}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...state.graph, title: state.title, node_id: activeDevice.id }),
+    body: JSON.stringify({ ...graphWithUserFields(), node_id: activeDevice.id }),
   });
   if (!res.ok) {
     fail(new Error("Device export failed"));
@@ -600,7 +667,7 @@ async function exportDevice(fmt) {
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const stem = (activeDevice.label || "device").replace(/[^A-Za-z0-9._-]+/g, "-");
+  const stem = (displayName(activeDevice) || "device").replace(/[^A-Za-z0-9._-]+/g, "-");
   a.href = url;
   a.download = `${stem}-device.${fmt}`;
   a.click();
@@ -612,7 +679,7 @@ async function copyAllDevice() {
   const res = await fetch("/api/export/device/txt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...state.graph, title: state.title, node_id: activeDevice.id }),
+    body: JSON.stringify({ ...graphWithUserFields(), node_id: activeDevice.id }),
   });
   if (!res.ok) {
     fail(new Error("Could not copy device details"));
@@ -652,6 +719,17 @@ async function init() {
     if (files.length) loadFiles(files);
   });
   el("btn-restore-samples").addEventListener("click", restoreBundledSamples);
+  el("btn-show-all").addEventListener("click", () => setAllLayers(true));
+  el("btn-show-none").addEventListener("click", () => setAllLayers(false));
+  el("device-name").addEventListener("input", (e) => saveActiveMeta({ name: e.target.value }));
+  el("device-extra").addEventListener("input", (e) => saveActiveMeta({ extra: e.target.value }));
+  el("device-notes").addEventListener("input", (e) => saveActiveMeta({ notes: e.target.value }));
+  el("device-reset-name").addEventListener("click", () => {
+    if (!activeDevice) return;
+    saveActiveMeta({ name: "" });
+    el("device-name").value = inferredName(activeDevice);
+    refreshNodeLabel(activeDevice);
+  });
   el("zoom-slider").addEventListener("input", (e) => applyZoomPct(e.target.value));
   el("zoom-fit").addEventListener("click", () => {
     if (!state.cy) return;

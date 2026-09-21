@@ -5,9 +5,8 @@ from io import BytesIO
 from xml.sax.saxutils import escape
 
 from surveymap.exporters.layout import layout_positions
-from surveymap.graph import mac_role_lines
+from surveymap.graph import device_map_label
 from surveymap.models import SurveyGraph
-from surveymap.services import node_service_caption
 
 
 def _shape_color(kind: str, medium: str) -> tuple[str, str]:
@@ -50,18 +49,7 @@ def export_vdx(graph: SurveyGraph, title: str = "NetSeer map") -> str:
         pin_x = max(x, 40) / 96.0
         pin_y = max(900 - y, 40) / 96.0
         line, fill = _shape_color(node.kind, node.medium)
-        label = escape(node.label)
-        extra = []
-        if node.ips:
-            extra.append(node.ips[0])
-        extra.extend(mac_role_lines(node, limit=2) or ([node.macs[0]] if node.macs else []))
-        if node.vendor:
-            extra.append(node.vendor)
-        caption = node_service_caption(node)
-        if caption:
-            extra.append(caption)
-        if extra:
-            label += "\\n" + escape("\\n".join(extra))
+        label = escape(device_map_label(node)).replace("\n", "\\n")
         shapes.append(
             f'''    <Shape ID="{sid}" Type="Shape" LineStyle="1" FillStyle="1" TextStyle="1">
       <XForm>
@@ -156,21 +144,7 @@ def export_vsdx(graph: SurveyGraph, title: str = "NetSeer map") -> bytes:
         line, fill = _shape_color(node.kind, node.medium)
         fill_hex = fill.lstrip("#")
         line_hex = line.lstrip("#")
-        label = escape(node.label)
-        bits = [label]
-        if node.ips:
-            bits.append(escape(node.ips[0]))
-        role_macs = mac_role_lines(node, limit=2)
-        if role_macs:
-            bits.extend(escape(line) for line in role_macs)
-        elif node.macs:
-            bits.append(escape(node.macs[0]))
-        if node.vendor:
-            bits.append(escape(node.vendor))
-        caption = node_service_caption(node)
-        if caption:
-            bits.append(escape(caption))
-        text = "\n".join(bits)
+        text = escape(device_map_label(node))
         shapes_xml.append(
             f'''<Shape ID="{sid}" NameU="Box" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">
   <Cell N="PinX" V="{pin_x:.4f}"/>

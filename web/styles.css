@@ -119,6 +119,8 @@ section { margin-bottom: 1.25rem; }
 .restore-samples { width: 100%; margin-top: 0.55rem; }
 
 .check { display: flex; gap: 0.45rem; align-items: center; margin: 0.3rem 0; color: var(--text); font-size: 0.92rem; }
+.show-actions { display: flex; gap: 0.4rem; margin: 0 0 0.55rem; }
+.show-actions .btn { flex: 1; padding: 0.35rem 0.5rem; font-size: 0.8rem; }
 .legend ul { list-style: none; padding: 0; margin: 0; }
 .legend li { display: flex; gap: 0.5rem; align-items: center; margin: 0.35rem 0; font-size: 0.88rem; }
 .swatch { width: 0.8rem; height: 0.8rem; border-radius: 0.2rem; display: inline-block; }
@@ -223,6 +225,33 @@ section { margin-bottom: 1.25rem; }
 }
 .modal-head h2 { margin: 0.15rem 0 0; font-size: 1.15rem; text-transform: none; letter-spacing: 0; color: var(--text); }
 .modal-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.map-label-edit { display: grid; gap: 0.45rem; margin: 0 0 0.75rem; }
+.field-label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.field-label input, .device-notes textarea {
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.55rem;
+}
+.field-label input:focus, .device-notes textarea:focus {
+  outline: none;
+  border-color: var(--wired);
+}
+.map-name-hint { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0; }
+.map-name-hint .btn { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+.device-notes { margin-top: 0.9rem; display: grid; gap: 0.35rem; }
+.device-notes textarea { min-height: 5.5rem; resize: vertical; }
 .device-fields { display: grid; gap: 0.35rem; }
 .field-row {
   display: grid;

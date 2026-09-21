@@ -3,9 +3,8 @@ from __future__ import annotations
 from xml.sax.saxutils import escape
 
 from surveymap.exporters.layout import layout_positions
-from surveymap.graph import mac_role_lines
+from surveymap.graph import device_map_label
 from surveymap.models import SurveyGraph
-from surveymap.services import node_service_caption
 
 KIND_STYLE = {
     "ap": "rounded=0;whiteSpace=wrap;html=1;shape=hexagon;fillColor=#422006;strokeColor=#FBBF24;fontColor=#FEF3C7;fontStyle=1;",
@@ -27,29 +26,7 @@ EDGE_STYLE = {
 
 
 def _label(node) -> str:
-    parts = [escape(node.label)]
-    if node.ips:
-        parts.append(escape(node.ips[0]))
-    role_macs = mac_role_lines(node, limit=2)
-    if role_macs:
-        parts.extend(escape(line) for line in role_macs)
-    elif node.macs and node.kind in {"ap", "host", "gateway", "server"}:
-        parts.append(escape(node.macs[0]))
-    if node.vendor:
-        parts.append(escape(node.vendor))
-    extras = []
-    if node.ssids and node.kind != "ap":
-        extras.append("SSID " + escape(node.ssids[0]))
-    if node.channels:
-        extras.append("ch " + ",".join(str(c) for c in node.channels))
-    if node.signal_dbm is not None:
-        extras.append(f"{node.signal_dbm:.0f} dBm")
-    caption = node_service_caption(node)
-    if caption:
-        extras.append(caption)
-    if extras:
-        parts.append(escape(" · ".join(extras)))
-    return "&#xa;".join(parts)
+    return escape(device_map_label(node)).replace("\n", "&#xa;")
 
 
 def export_drawio(graph: SurveyGraph, title: str = "NetSeer map") -> str:
@@ -61,9 +38,9 @@ def export_drawio(graph: SurveyGraph, title: str = "NetSeer map") -> str:
         if node.medium == "wireless" and node.kind == "host":
             style = KIND_STYLE["ap"].replace("hexagon", "mxgraph.networks.computer")
             style = "rounded=1;whiteSpace=wrap;html=1;fillColor=#451A03;strokeColor=#FBBF24;fontColor=#FEF3C7;"
-        w, h = (180, 88) if node.kind != "ap" else (170, 90)
-        if node_service_caption(node):
-            h += 16
+        w, h = (130, 48) if node.kind != "ap" else (140, 56)
+        if getattr(node, "caption", ""):
+            h += 14
         cells.append(
             f'        <mxCell id="{escape(node.id)}" value="{_label(node)}" style="{style}" '
             f'vertex="1" parent="1"><mxGeometry x="{x:.1f}" y="{y:.1f}" width="{w}" height="{h}" as="geometry"/>'

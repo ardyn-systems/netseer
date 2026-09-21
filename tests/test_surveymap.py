@@ -48,7 +48,9 @@ def test_office_lan_has_ports_and_services():
     assert "<Creator>NetSeer</Creator>" in vdx
     vsdx = export_vsdx(graph)
     assert vsdx[:2] == b"PK"
-    web = next(n for n in graph.nodes if "10.10.20.80" in n.ips or n.label == "10.10.20.80")
+    web = next(n for n in graph.nodes if "10.10.20.80" in n.ips)
+    assert web.label == "Server"
+    assert web.inferred_type == "Server"
     props = device_properties(graph, web)
     names = {row["name"] for row in props}
     assert "TX MAC" in names
@@ -112,12 +114,38 @@ def test_mac_roles_from_wired_and_dot11():
     assert any(n.mac_ra for n in wifi.nodes)
     assert any(n.mac_tx for n in wifi.nodes)
     xml = export_drawio(wifi)
-    assert "TX " in xml
-    assert "RA " in xml
+    assert "Access point" in xml
     phone = next(n for n in wifi.nodes if n.macs and n.macs[0].startswith("a4:c3:f0"))
+    assert phone.label == "Wireless client"
     text = device_plain_text(wifi, phone)
     assert "TX MAC:" in text
     assert "RA MAC:" in text
+
+
+def test_inferred_names_and_export_notes():
+    from surveymap.graph import infer_display_name
+
+    assert infer_display_name({"kind": "ap", "roles": ["ap"]}) == "Access point"
+    assert infer_display_name({"kind": "host", "roles": ["station"], "medium": "wireless"}) == "Wireless client"
+    assert infer_display_name({"kind": "gateway", "roles": ["gateway"], "routing": {"ospf_router_id": "10.10.10.1"}, "services": ["ospf"]}) == "Router"
+    assert infer_display_name({"kind": "host", "ports": [{"role": "listen", "port": 80}]}) == "Server"
+    assert infer_display_name({"kind": "host"}) == "Host"
+    if not (DATA_DIR / "office-lan.pcap").exists():
+        write_all(DATA_DIR)
+    graph = ingest_files(files_for_sample("office-lan"))
+    gw = next(n for n in graph.nodes if "10.10.10.1" in n.ips)
+    assert gw.label == "Router"
+    web = next(n for n in graph.nodes if "10.10.20.80" in n.ips)
+    web.notes = "Rack A1"
+    web.caption = "Intranet"
+    web.label = "Lobby server"
+    text = device_plain_text(graph, web)
+    assert "Notes: Rack A1" in text
+    assert "On-map extra: Intranet" in text
+    assert "Lobby server" in text
+    xml = export_drawio(graph)
+    assert "Lobby server" in xml
+    assert "Intranet" in xml
 
 
 def test_unsupported_and_empty(tmp_path):
